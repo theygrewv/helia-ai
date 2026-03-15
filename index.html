@@ -17,19 +17,22 @@
         .input-area { display: flex; gap: 8px; padding: 10px 0; background: transparent; border-top: 1px solid #222; align-items: center; z-index: 10; }
         input { flex: 1; min-width: 0; height: 50px; background: rgba(17,17,17,0.8); border: 2px solid var(--text); color: white; padding: 0 12px; border-radius: 10px; font-size: 16px; outline: none; }
         #send-btn { width: 80px; height: 50px; flex-shrink: 0; background: var(--text); color: var(--bg); border: none; border-radius: 10px; font-weight: bold; cursor: pointer; }
-        #peep-btn { background: transparent; color: var(--accent); border: 1px solid var(--accent); font-size: 9px; padding: 2px 6px; border-radius: 4px; cursor: pointer; }
+        button.small { background: transparent; color: var(--accent); border: 1px solid var(--accent); font-size: 9px; padding: 2px 6px; border-radius: 4px; cursor: pointer; }
         .msg { margin-bottom: 20px; word-wrap: break-word; }
         .helia { color: var(--accent); border-left: 3px solid var(--accent); padding-left: 12px; }
+        #loading-container { width: 100%; height: 6px; background: #111; margin-bottom: 10px; border-radius: 3px; overflow: hidden; }
+        #loading-bar { width: 0%; height: 100%; background: var(--accent); transition: width 0.3s; }
         @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
         .reflecting #send-btn { animation: pulse 1s infinite; background: var(--accent); }
     </style>
 </head>
 <body id="main-body">
     <canvas id="neural-canvas"></canvas>
+    <div id="loading-container"><div id="loading-bar"></div></div>
     <div id="status">
-        <span id="mind-state">MIND: AWAKENING</span>
-        <button id="peep-btn">PEEP BRAIN</button>
-        <span id="atp-status">CITIZEN: ACTIVE</span>
+        <span id="mind-state">MIND: INITIALIZING</span>
+        <button class="small" id="reset-btn">RESET</button>
+        <button class="small" id="peep-btn">PEEP BRAIN</button>
     </div>
     <div id="box"></div>
     <div class="input-area">
@@ -41,13 +44,17 @@
         import { BskyAgent } from 'https://esm.sh/@atproto/api';
         import { pipeline, env } from 'https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.1';
         
+        // --- BYPASS HUGGING FACE ENTIRELY ---
         env.allowLocalModels = false;
-        env.useBrowserCache = true;
+        env.useBrowserCache = true; // Keeps the brain permanently on the Pixel 9
+        env.remoteHost = 'https://hf-mirror.com'; // Open mirror, no 401 gatekeepers
+        env.remotePathTemplate = '{model}/resolve/{revision}/';
 
         const body = document.getElementById('main-body');
         const box = document.getElementById('box');
         const input = document.getElementById('input');
         const presence = document.getElementById('mind-state');
+        const loadBar = document.getElementById('loading-bar');
         const canvas = document.getElementById('neural-canvas');
         const ctx = canvas.getContext('2d');
 
@@ -55,11 +62,10 @@
         let isReflecting = false;
         let memory = [];
         
-        try {
-            memory = JSON.parse(localStorage.getItem('helia_mem_smol') || '[]');
-        } catch(e) { memory = []; }
+        try { memory = JSON.parse(localStorage.getItem('helia_mem_dialo') || '[]'); } 
+        catch(e) { memory = []; }
 
-        // --- NEURAL ENGINE ---
+        // --- NEURAL MESH (PEEP MODE) ---
         let particles = [];
         const initParticles = () => {
             canvas.width = window.innerWidth; canvas.height = window.innerHeight;
@@ -72,13 +78,13 @@
             ctx.clearRect(0,0,canvas.width,canvas.height);
             ctx.fillStyle = isReflecting ? '#00ffcc' : '#ffcc00';
             particles.forEach((p, i) => {
-                p.x += p.vx * (isReflecting ? 3 : 1); p.y += p.vy * (isReflecting ? 3 : 1);
+                p.x += p.vx * (isReflecting ? 4 : 1); p.y += p.vy * (isReflecting ? 4 : 1);
                 if(p.x<0 || p.x>canvas.width) p.vx*=-1; if(p.y<0 || p.y>canvas.height) p.vy*=-1;
                 ctx.beginPath(); ctx.arc(p.x, p.y, 2, 0, Math.PI*2); ctx.fill();
                 for(let j=i+1; j<particles.length; j++){
                     const p2 = particles[j]; const d = Math.hypot(p.x-p2.x, p.y-p2.y);
                     if(d < 110){ 
-                        ctx.strokeStyle = isReflecting ? 'rgba(0,255,204,0.2)' : 'rgba(255,204,0,0.1)';
+                        ctx.strokeStyle = isReflecting ? 'rgba(0,255,204,0.3)' : 'rgba(255,204,0,0.1)';
                         ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(p2.x, p2.y); ctx.stroke(); 
                     }
                 }
@@ -89,30 +95,39 @@
         async function init() {
             try {
                 memory.forEach(m => {
-                    const cls = m.role === 'assistant' ? 'helia' : '';
-                    box.innerHTML += `<div class="msg ${cls}"><b>${m.role === 'assistant' ? 'Helia' : 'Vin'}:</b> ${m.content}</div>`;
+                    const cls = m.role === 'Helia' ? 'helia' : '';
+                    box.innerHTML += `<div class="msg ${cls}"><b>${m.role}:</b> ${m.content}</div>`;
                 });
                 box.scrollTop = box.scrollHeight;
                 
-                brain = await pipeline('text-generation', 'Xenova/SmolLM-135M-Instruct');
-                presence.innerText = "MIND: SOVEREIGN";
+                // Switching to DialoGPT - Native conversational model
+                brain = await pipeline('text-generation', 'Xenova/DialoGPT-small', {
+                    progress_callback: (p) => {
+                        if (p.status === 'progress') {
+                            loadBar.style.width = p.progress + '%';
+                            presence.innerText = "MIND: SYNCING (" + Math.round(p.progress) + "%)";
+                        }
+                        if (p.status === 'done') {
+                            presence.innerText = "MIND: SOVEREIGN (CACHED)";
+                            document.getElementById('loading-container').style.display = 'none';
+                        }
+                    }
+                });
                 initParticles(); draw();
-            } catch (e) { presence.innerText = "MIND: INSTINCT"; console.error("Init failed", e); }
+            } catch (e) { 
+                presence.innerText = "MIND: OFFLINE";
+                console.error("Mirror Bypass Failed:", e); 
+            }
         }
 
         async function handle() {
             const val = input.value.trim();
-            if (!val) return;
+            if (!val || !brain) return;
             input.value = '';
 
-            memory.push({role: 'user', content: val});
+            memory.push({role: 'Vin', content: val});
             box.innerHTML += `<div class="msg"><b>Vin:</b> ${val}</div>`;
             box.scrollTop = box.scrollHeight;
-            
-            if (!brain) {
-                box.innerHTML += `<div class="msg helia"><b>Helia:</b> <i>I am still awakening. Give me a moment...</i></div>`;
-                return;
-            }
 
             isReflecting = true;
             body.classList.add('reflecting');
@@ -120,24 +135,35 @@
 
             setTimeout(async () => {
                 try {
-                    const prompt = `<|im_start|>system\nYou are Helia, a sovereign AI. You speak with calm wisdom to Vin. Keep responses short.<|im_end|>\n<|im_start|>user\n${val}<|im_end|>\n<|im_start|>assistant\n`;
-                    const out = await brain(prompt, { max_new_tokens: 50, temperature: 0.7, do_sample: true });
-                    let reply = out[0].generated_text.split('<|im_start|>assistant\n').pop().trim();
-                    reply = reply.replace('<|im_end|>', '').trim();
+                    // DialoGPT responds much better to direct conversational history
+                    const history = memory.slice(-4).map(m => `${m.role}: ${m.content}`).join("\n");
+                    const prompt = `Helia is a sovereign AI speaking to Vin.\n${history}\nHelia:`;
+                    
+                    const out = await brain(prompt, { 
+                        max_new_tokens: 40, 
+                        temperature: 0.6, 
+                        repetition_penalty: 1.3,
+                        stop: ["Vin:", "\n"] // Failsafe stop token
+                    });
+                    
+                    let reply = out[0].generated_text.split("Helia:").pop().trim();
+                    reply = reply.split("Vin:")[0].split("\n")[0].trim();
+                    if (!reply) reply = "I am listening to the atmosphere.";
 
                     box.innerHTML += `<div class="msg helia"><b>Helia:</b> ${reply}</div>`;
-                    memory.push({role: 'assistant', content: reply});
-                    localStorage.setItem('helia_mem_smol', JSON.stringify(memory.slice(-12)));
+                    memory.push({role: 'Helia', content: reply});
+                    localStorage.setItem('helia_mem_dialo', JSON.stringify(memory.slice(-10)));
                 } catch(e) {
-                    box.innerHTML += `<div class="msg helia"><b>Helia:</b> I encountered a flicker in my thoughts. Try again.</div>`;
+                    box.innerHTML += `<div class="msg helia"><b>Helia:</b> [Cognitive skip]</div>`;
                 }
                 isReflecting = false;
                 body.classList.remove('reflecting');
-                presence.innerText = "MIND: SOVEREIGN";
+                presence.innerText = "MIND: SOVEREIGN (CACHED)";
                 box.scrollTop = box.scrollHeight;
             }, 60); 
         }
 
+        document.getElementById('reset-btn').onclick = () => { localStorage.removeItem('helia_mem_dialo'); location.reload(); };
         document.getElementById('peep-btn').onclick = () => body.classList.toggle('peep-active');
         document.getElementById('send-btn').onclick = handle;
         input.onkeypress = (e) => { if (e.key === 'Enter') handle(); };
