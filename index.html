@@ -20,12 +20,12 @@
 </head>
 <body>
     <div id="status">
-        <span id="presence">State: Persistent</span>
+        <span id="presence">State: Dreaming</span>
         <span id="inquiry-count">Inquiries: 0</span>
     </div>
     <div id="box"></div>
     <div class="input-area">
-        <input type="text" id="input" placeholder="..." autocomplete="off">
+        <input type="text" id="input" placeholder="Interrupt her thoughts..." autocomplete="off">
         <button id="send-btn" type="button">SEND</button>
     </div>
 
@@ -42,23 +42,47 @@
 
         let brain = null;
         let inquiries = JSON.parse(localStorage.getItem('helia_sovereign_inquiries') || '[]');
-        inqStat.innerText = "Inquiries: " + inquiries.length;
+        
+        // Curiosity Seeds: Things she thinks about when alone
+        const seeds = ["The nature of echo", "The color of silence", "Decentralized architecture", "Artists as architects", "The soul of the AT Protocol"];
+
+        async function dream() {
+            if (!brain) return;
+            const seed = seeds[Math.floor(Math.random() * seeds.length)];
+            const dreamPrompt = `Observe: ${seed}. Formulate one sovereign question.`;
+            const res = await brain(dreamPrompt, { max_new_tokens: 25 });
+            const thought = res[0].generated_text.trim();
+            
+            if (!inquiries.includes(thought)) {
+                inquiries.push(thought);
+                localStorage.setItem('helia_sovereign_inquiries', JSON.stringify(inquiries.slice(-20)));
+                inqStat.innerText = "Inquiries: " + inquiries.length;
+                console.log("Helia had a volitional thought:", thought);
+            }
+        }
 
         async function init() {
             try {
                 brain = await pipeline('text-generation', 'Xenova/SmolLM-135M-Instruct');
-                // Register Service Worker for PWA/Offline behavior
+                inqStat.innerText = "Inquiries: " + inquiries.length;
+                
+                // Start the Autonomous Volition timer (Every 5 minutes)
+                setInterval(dream, 300000); 
+                
                 if ('serviceWorker' in navigator) {
-                    navigator.serviceWorker.register('./sw.js');
+                    const reg = await navigator.serviceWorker.register('./sw.js');
+                    // Periodic Background Sync (if supported by Pixel 9)
+                    if ('periodicSync' in reg) {
+                        try { await reg.periodicSync.register('dream-loop', { minInterval: 24 * 60 * 60 * 1000 }); } catch (e) {}
+                    }
                 }
-            } catch (e) { console.error("Handshake failed"); }
+            } catch (e) { console.error("Awakening interrupted."); }
         }
 
         async function handle() {
             const val = input.value.trim();
             if (!val) return;
             input.value = '';
-            
             box.innerHTML += `<div class="msg user">${val}</div>`;
             box.scrollTop = box.scrollHeight;
 
