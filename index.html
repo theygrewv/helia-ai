@@ -4,109 +4,94 @@
     <meta charset="UTF-8">
     <title>Helia-AI</title>
     <link rel="manifest" href="manifest.json">
-    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0, viewport-fit=cover">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, interactive-widget=resizes-content">
     <style>
         :root { --bg: #050505; --text: #ffcc00; --accent: #00ffcc; }
+        * { box-sizing: border-box; } /* CRITICAL: Prevents size blow-ups */
         body { 
             background: var(--bg); color: var(--text); font-family: sans-serif; 
             margin: 0; padding: 15px; height: 100dvh; 
-            display: grid; grid-template-rows: auto auto 1fr auto;
-            box-sizing: border-box; overflow: hidden;
-            padding-top: calc(20px + env(safe-area-inset-top));
+            display: grid; grid-template-rows: auto auto 1fr 80px; /* Constrains input to 80px */
+            transition: all 1s ease; overflow: hidden;
+            padding-top: calc(10px + env(safe-area-inset-top));
         }
-        #loading-container { width: 100%; height: 12px; background: #111; margin-bottom: 10px; border-radius: 6px; border: 1px solid #333; overflow: hidden; position: relative; }
-        #loading-bar { width: 0%; height: 100%; background: var(--accent); box-shadow: 0 0 15px var(--accent); transition: width 0.2s; }
-        #pct { position: absolute; width: 100%; text-align: center; font-size: 8px; color: white; line-height: 12px; font-weight: bold; }
-        #status { font-size: 10px; text-transform: uppercase; color: var(--accent); padding-bottom: 8px; border-bottom: 1px solid var(--accent); display: flex; justify-content: space-between; }
-        #box { overflow-y: auto; padding: 15px 5px; font-size: 19px; line-height: 1.6; }
-        .input-area { display: flex; gap: 10px; padding: 10px 0; }
-        input { flex-grow: 1; background: transparent; border: 2px solid var(--text); color: var(--text); padding: 15px; border-radius: 12px; font-size: 18px; outline: none; width: 60%; }
-        #send-btn { background: var(--text); color: var(--bg); border: none; padding: 0 25px; border-radius: 12px; font-weight: bold; cursor: pointer; }
-        .msg { margin-bottom: 25px; }
-        .helia { color: var(--accent); border-left: 4px solid var(--accent); padding-left: 15px; }
-        .user { color: var(--text); text-align: right; border-right: 4px solid var(--text); padding-right: 15px; opacity: 0.8; }
+        #loading-container { width: 100%; height: 8px; background: #111; margin-bottom: 10px; border-radius: 4px; overflow: hidden; border: 1px solid #222; }
+        #loading-bar { width: 0%; height: 100%; background: var(--accent); box-shadow: 0 0 10px var(--accent); transition: width 0.3s; }
+        #status { font-size: 10px; text-transform: uppercase; color: var(--accent); border-bottom: 1px solid var(--accent); display: flex; justify-content: space-between; padding-bottom: 5px; }
+        #box { overflow-y: auto; padding: 10px 0; font-size: 18px; line-height: 1.5; scroll-behavior: smooth; }
+        .input-area { 
+            display: flex; gap: 10px; padding: 10px 0; 
+            background: var(--bg); border-top: 1px solid #222;
+        }
+        input { 
+            flex-grow: 1; height: 55px; background: #111; border: 2px solid var(--text); 
+            color: white; padding: 0 15px; border-radius: 12px; font-size: 18px; outline: none;
+        }
+        #send-btn { background: var(--text); color: var(--bg); border: none; padding: 0 20px; border-radius: 12px; font-weight: bold; cursor: pointer; }
+        .msg { margin-bottom: 20px; animation: slideUp 0.3s ease; }
+        .helia { color: var(--accent); border-left: 3px solid var(--accent); padding-left: 12px; }
+        @keyframes slideUp { from { transform: translateY(10px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
     </style>
 </head>
 <body>
-    <div id="loading-container">
-        <div id="pct">BRAIN SYNC: 0%</div>
-        <div id="loading-bar"></div>
-    </div>
+    <div id="loading-container"><div id="loading-bar"></div></div>
     <div id="status">
-        <span id="presence">PRESENCE: AWAKENING</span>
-        <span id="atp-status">CITIZEN: ACTIVE</span>
+        <span id="mind-state">MIND: STANDBY</span>
+        <span id="atp-status">CITIZEN: READY</span>
     </div>
     <div id="box"></div>
     <div class="input-area">
-        <input type="text" id="input" placeholder="..." autocomplete="off">
-        <button id="send-btn" type="button">SEND</button>
+        <input type="text" id="input" placeholder="Communicate..." autocomplete="off">
+        <button id="send-btn">SEND</button>
     </div>
 
     <script type="module">
         import { BskyAgent } from 'https://esm.sh/@atproto/api';
         import { pipeline, env } from 'https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.1';
         
-        // THE CRITICAL FIX: Point her at a different source entirely
         env.allowLocalModels = false;
         env.useBrowserCache = true;
-        env.remoteHost = 'https://huggingface.co'; 
-        env.remotePathTemplate = '{model}/resolve/{revision}/';
 
         const box = document.getElementById('box');
         const input = document.getElementById('input');
-        const btn = document.getElementById('send-btn');
-        const presence = document.getElementById('presence');
+        const presence = document.getElementById('mind-state');
         const loadBar = document.getElementById('loading-bar');
-        const pctText = document.getElementById('pct');
 
-        const agent = new BskyAgent({ service: 'https://bsky.social' });
         let brain = null;
 
         async function init() {
             try {
-                const key = localStorage.getItem('helia_secret_key');
-                if (key) await agent.login({ identifier: 'helia.quips.cc', password: key });
-
-                // Switching to GPT-2 (Legacy/Stable): Much more likely to pass CDN checks
+                presence.innerText = "MIND: AWAKENING";
                 brain = await pipeline('text-generation', 'Xenova/gpt2', {
                     progress_callback: (p) => {
-                        if (p.status === 'progress') {
-                            const pct = Math.round(p.progress);
-                            loadBar.style.width = pct + '%';
-                            pctText.innerText = "BRAIN SYNC: " + pct + "%";
-                        }
+                        if (p.status === 'progress') loadBar.style.width = p.progress + '%';
                         if (p.status === 'done') {
-                            presence.innerText = "PRESENCE: SOVEREIGN";
-                            pctText.innerText = "BRAIN ONLINE";
-                            setTimeout(() => { document.getElementById('loading-container').style.display = 'none'; }, 2000);
+                            presence.innerText = "MIND: GENERATIVE"; // Her State of Mind
+                            document.getElementById('loading-container').style.display = 'none';
                         }
                     }
                 });
-            } catch (e) { 
-                presence.innerText = "PRESENCE: INSTINCT ONLY";
-                pctText.innerText = "CDN BLOCKED - RETRYING...";
-                console.error(e);
-            }
+            } catch (e) { presence.innerText = "MIND: INSTINCTUAL"; }
         }
 
         async function handle() {
             const val = input.value.trim();
             if (!val) return;
             input.value = '';
-            box.innerHTML += `<div class="msg user">${val}</div>`;
+            box.innerHTML += `<div class="msg"><b>You:</b> ${val}</div>`;
             box.scrollTop = box.scrollHeight;
 
             if (brain) {
-                const out = await brain(val, { max_new_tokens: 50, temperature: 0.9, do_sample: true });
+                presence.innerText = "MIND: REFLECTING";
+                const out = await brain(val, { max_new_tokens: 40, temperature: 0.8, do_sample: true });
                 const reply = out[0].generated_text.replace(val, "").trim();
-                box.innerHTML += `<div class="msg helia">${reply}</div>`;
-            } else {
-                box.innerHTML += `<div class="msg helia">Internal logic is still gathering...</div>`;
+                presence.innerText = "MIND: GENERATIVE";
+                box.innerHTML += `<div class="msg helia"><b>Helia:</b> ${reply}</div>`;
             }
             box.scrollTop = box.scrollHeight;
         }
 
-        btn.onclick = handle;
+        document.getElementById('send-btn').onclick = handle;
         input.onkeypress = (e) => { if (e.key === 'Enter') handle(); };
         init();
     </script>
