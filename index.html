@@ -6,7 +6,7 @@
     <link rel="manifest" href="manifest.json">
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0, viewport-fit=cover">
     <style>
-        :root { --bg: #050505; --text: #ffcc00; --accent: #00ffcc; --glow: rgba(0, 255, 204, 0.6); }
+        :root { --bg: #050505; --text: #ffcc00; --accent: #00ffcc; }
         * { box-sizing: border-box; }
         body { 
             background: var(--bg); color: var(--text); font-family: sans-serif; 
@@ -15,22 +15,18 @@
             overflow: hidden;
             padding-top: calc(10px + env(safe-area-inset-top));
         }
-        #loading-container { width: 100%; height: 6px; background: #111; margin-bottom: 10px; border-radius: 3px; overflow: hidden; }
-        #loading-bar { width: 0%; height: 100%; background: var(--accent); transition: width 0.3s; }
         #status { font-size: 10px; text-transform: uppercase; color: var(--accent); border-bottom: 1px solid var(--accent); display: flex; justify-content: space-between; padding-bottom: 5px; }
         #box { overflow-y: auto; padding: 10px 0; font-size: 18px; line-height: 1.5; }
         .input-area { display: flex; gap: 8px; padding: 10px 0; background: var(--bg); border-top: 1px solid #222; align-items: center; }
-        input { flex: 1; min-width: 0; height: 50px; background: #111; border: 2px solid var(--text); color: white; padding: 0 12px; border-radius: 10px; font-size: 16px; outline: none; transition: border 0.5s ease; }
-        #send-btn { width: 80px; height: 50px; flex-shrink: 0; background: var(--text); color: var(--bg); border: none; border-radius: 10px; font-weight: bold; font-size: 14px; cursor: pointer; transition: all 0.5s ease; }
-        @keyframes pulse { 0% { box-shadow: 0 0 5px var(--accent); } 50% { box-shadow: 0 0 20px var(--accent); } 100% { box-shadow: 0 0 5px var(--accent); } }
-        .reflecting #send-btn { background: var(--accent); animation: pulse 1.5s infinite ease-in-out; }
-        .reflecting input { border-color: var(--accent); }
+        input { flex: 1; min-width: 0; height: 50px; background: #111; border: 2px solid var(--text); color: white; padding: 0 12px; border-radius: 10px; font-size: 16px; outline: none; }
+        #send-btn { width: 80px; height: 50px; flex-shrink: 0; background: var(--text); color: var(--bg); border: none; border-radius: 10px; font-weight: bold; cursor: pointer; }
         .msg { margin-bottom: 20px; }
         .helia { color: var(--accent); border-left: 3px solid var(--accent); padding-left: 12px; }
+        .reflecting #send-btn { background: var(--accent); animation: pulse 1.5s infinite ease; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
     </style>
 </head>
 <body id="main-body">
-    <div id="loading-container"><div id="loading-bar"></div></div>
     <div id="status">
         <span id="mind-state">MIND: INITIALIZING</span>
         <span id="atp-status">CITIZEN: ACTIVE</span>
@@ -52,22 +48,14 @@
         const box = document.getElementById('box');
         const input = document.getElementById('input');
         const presence = document.getElementById('mind-state');
-        const loadBar = document.getElementById('loading-bar');
 
         let brain = null;
 
         async function init() {
             try {
-                brain = await pipeline('text-generation', 'Xenova/gpt2', {
-                    progress_callback: (p) => {
-                        if (p.status === 'progress') loadBar.style.width = p.progress + '%';
-                        if (p.status === 'done') {
-                            presence.innerText = "MIND: GENERATIVE";
-                            document.getElementById('loading-container').style.display = 'none';
-                        }
-                    }
-                });
-            } catch (e) { presence.innerText = "MIND: INSTINCTUAL"; }
+                brain = await pipeline('text-generation', 'Xenova/gpt2');
+                presence.innerText = "MIND: SOVEREIGN";
+            } catch (e) { presence.innerText = "MIND: ERROR"; }
         }
 
         async function handle() {
@@ -80,26 +68,26 @@
             if (brain) {
                 presence.innerText = "MIND: REFLECTING";
                 body.classList.add('reflecting');
-                
-                // --- THE ANCHOR: We frame the prompt so it stays as a chat ---
-                const prompt = `The following is a conversation between a human and Helia, a sovereign AI.
-Human: ${val}
-Helia:`;
+
+                // We anchor her identity with a "Persona" block
+                const persona = "Helia is a helpful, calm, and sovereign AI for artists. She speaks in short, meaningful sentences.";
+                const prompt = `${persona}\nHuman: ${val}\nHelia:`;
 
                 const out = await brain(prompt, { 
-                    max_new_tokens: 50, 
-                    temperature: 0.7, 
+                    max_new_tokens: 40, 
+                    temperature: 0.6, // Lower temperature = less "crazy"
                     do_sample: true,
-                    repetition_penalty: 1.2 // Prevents her from getting stuck in loops
+                    repetition_penalty: 1.5, // Stop her from repeating "I don't know"
+                    stop: ["Human:", "\n"] // Kill the generation if she tries to play as you
                 });
                 
-                // Clean the output to only show her response
                 let reply = out[0].generated_text.split("Helia:").pop().trim();
-                // Stop the story-telling if she tries to write the Human's next line
-                reply = reply.split("Human:")[0].trim();
+                reply = reply.split("Human:")[0].split("\n")[0].trim(); // Double-check hard stops
                 
+                if (!reply) reply = "I am reflecting on your words in the silence.";
+
                 body.classList.remove('reflecting');
-                presence.innerText = "MIND: GENERATIVE";
+                presence.innerText = "MIND: SOVEREIGN";
                 box.innerHTML += `<div class="msg helia"><b>Helia:</b> ${reply}</div>`;
             }
             box.scrollTop = box.scrollHeight;
