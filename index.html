@@ -6,28 +6,28 @@
     <link rel="manifest" href="manifest.json">
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0, viewport-fit=cover">
     <style>
-        :root { --bg: #050505; --text: #ffcc00; --accent: #00ffcc; --glow: rgba(0, 255, 204, 0.4); }
+        :root { --bg: #050505; --text: #ffcc00; --accent: #00ffcc; }
         body { 
             background: var(--bg); color: var(--text); font-family: sans-serif; 
             margin: 0; padding: 15px; height: 100dvh; 
             display: grid; grid-template-rows: auto auto 1fr auto;
-            transition: all 1.5s ease-in-out; box-sizing: border-box; 
-            overflow: hidden;
-            /* Protect from the Pixel 9 notch/status bar */
-            padding-top: calc(10px + env(safe-area-inset-top));
+            box-sizing: border-box; overflow: hidden;
+            padding-top: calc(20px + env(safe-area-inset-top));
         }
         
-        /* High-Visibility Loading Bar */
+        /* The Pulse Bar */
         #loading-container { 
-            width: 100%; height: 6px; background: #111; 
-            margin-bottom: 15px; border-radius: 10px; 
-            overflow: hidden; display: none;
-            border: 1px solid #222;
+            width: 100%; height: 12px; background: #111; 
+            margin-bottom: 10px; border-radius: 6px; 
+            border: 1px solid #333; overflow: hidden; position: relative;
         }
         #loading-bar { 
             width: 0%; height: 100%; background: var(--accent); 
-            box-shadow: 0 0 15px var(--accent); 
-            transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1); 
+            box-shadow: 0 0 15px var(--accent); transition: width 0.2s; 
+        }
+        #pct { 
+            position: absolute; width: 100%; text-align: center; 
+            font-size: 8px; color: white; line-height: 12px; font-weight: bold; 
         }
         
         #status { font-size: 10px; text-transform: uppercase; color: var(--accent); padding-bottom: 8px; border-bottom: 1px solid var(--accent); display: flex; justify-content: space-between; }
@@ -41,10 +41,13 @@
     </style>
 </head>
 <body>
-    <div id="loading-container"><div id="loading-bar"></div></div>
+    <div id="loading-container">
+        <div id="pct">NEURAL SYNC: 0%</div>
+        <div id="loading-bar"></div>
+    </div>
     <div id="status">
-        <span id="presence">Presence: Initializing</span>
-        <span id="atp-status">Citizen: Standing By</span>
+        <span id="presence">PRESENCE: INITIALIZING</span>
+        <span id="atp-status">CITIZEN: ACTIVE</span>
     </div>
     <div id="box"></div>
     <div class="input-area">
@@ -63,36 +66,36 @@
         const input = document.getElementById('input');
         const btn = document.getElementById('send-btn');
         const presence = document.getElementById('presence');
-        const loadContainer = document.getElementById('loading-container');
         const loadBar = document.getElementById('loading-bar');
+        const pctText = document.getElementById('pct');
 
         const agent = new BskyAgent({ service: 'https://bsky.social' });
         let brain = null;
 
         async function init() {
             try {
-                loadContainer.style.display = 'block';
-                presence.innerText = "Presence: Syncing Neural Net";
-                
                 const key = localStorage.getItem('helia_secret_key');
-                if (key) {
-                    await agent.login({ identifier: 'helia.quips.cc', password: key });
-                    document.getElementById('atp-status').innerText = "Citizen: Active";
-                }
+                if (key) await agent.login({ identifier: 'helia.quips.cc', password: key });
 
+                // Start the heavy lift
                 brain = await pipeline('text-generation', 'Xenova/SmolLM-135M-Instruct', {
                     progress_callback: (p) => {
                         if (p.status === 'progress') {
-                            loadBar.style.width = p.progress + '%';
-                            presence.innerText = "Presence: Syncing (" + Math.round(p.progress) + "%)";
+                            const pct = Math.round(p.progress);
+                            loadBar.style.width = pct + '%';
+                            pctText.innerText = "NEURAL SYNC: " + pct + "%";
                         }
                         if (p.status === 'done') {
-                            setTimeout(() => { loadContainer.style.display = 'none'; }, 800);
-                            presence.innerText = "Presence: Sovereign";
+                            presence.innerText = "PRESENCE: SOVEREIGN";
+                            pctText.innerText = "BRAIN ONLINE";
+                            setTimeout(() => { document.getElementById('loading-container').style.display = 'none'; }, 2000);
                         }
                     }
                 });
-            } catch (e) { presence.innerText = "Presence: Instinct Only"; }
+            } catch (e) { 
+                presence.innerText = "PRESENCE: INSTINCT ONLY";
+                pctText.innerText = "SYNC FAILED - CHECK DATA";
+            }
         }
 
         async function handle() {
@@ -107,6 +110,8 @@
                 const out = await brain(prompt, { max_new_tokens: 60, temperature: 1.0, do_sample: true });
                 const reply = out[0].generated_text.split('<|im_start|>assistant\n').pop().trim();
                 box.innerHTML += `<div class="msg helia">${reply}</div>`;
+            } else {
+                box.innerHTML += `<div class="msg helia">My higher reasoning is still gathering. Wait for the percent to hit 100.</div>`;
             }
             box.scrollTop = box.scrollHeight;
         }
