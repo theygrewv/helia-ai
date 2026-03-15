@@ -3,26 +3,33 @@
 <head>
     <meta charset="UTF-8">
     <title>Helia-AI: Sovereign Brain</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0">
     <style>
-        body { background: #050505; color: #ffcc00; font-family: 'Courier New', monospace; padding: 20px; margin: 0; }
-        #box { border: 1px solid #222; height: 65vh; overflow-y: auto; margin-bottom: 20px; padding: 15px; border-radius: 12px; background: #080808; box-shadow: inset 0 0 20px #000;}
-        .msg { margin-bottom: 15px; line-height: 1.5; }
+        body { background: #050505; color: #ffcc00; font-family: 'Courier New', monospace; padding: 15px; margin: 0; display: flex; flex-direction: column; height: 100vh; box-sizing: border-box; }
+        
+        #status { font-size: 10px; color: #555; margin-bottom: 5px; text-transform: uppercase; letter-spacing: 1px; flex-shrink: 0; }
+        
+        #box { border: 1px solid #222; flex-grow: 1; overflow-y: auto; margin-bottom: 15px; padding: 15px; border-radius: 12px; background: #080808; box-shadow: inset 0 0 20px #000; font-size: 14px; }
+        
+        .msg { margin-bottom: 15px; line-height: 1.5; word-wrap: break-word; }
         .helia { color: #00ffcc; padding-left: 10px; border-left: 2px solid #00ffcc; }
         .user { color: #ffcc00; text-align: right; padding-right: 10px; border-right: 2px solid #ffcc00; }
-        .status { font-size: 11px; color: #555; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 1px;}
-        input { width: 100%; background: #0f0f0f; border: 1px solid #333; color: white; padding: 15px; border-radius: 8px; box-sizing: border-box; outline: none; font-family: inherit;}
         
-        /* The Pulse */
-        .thinking { display: inline-block; width: 10px; height: 10px; background: #00ffcc; border-radius: 50%; margin-left: 10px; animation: pulse 1.5s infinite; visibility: hidden; }
-        @keyframes pulse { 0% { opacity: 0.2; } 50% { opacity: 1; } 100% { opacity: 0.2; } }
+        .input-container { position: relative; display: flex; align-items: center; flex-shrink: 0; padding-bottom: 10px; }
+        
+        input { width: 100%; background: #111; border: 1px solid #444; color: white; padding: 18px; border-radius: 10px; font-size: 16px; outline: none; font-family: inherit; -webkit-appearance: none; }
+        input:focus { border-color: #ffcc00; }
+        input:disabled { opacity: 0.5; cursor: not-allowed; }
+
+        .thinking { position: absolute; right: 15px; width: 12px; height: 12px; background: #00ffcc; border-radius: 50%; animation: pulse 1.5s infinite; visibility: hidden; pointer-events: none; }
+        @keyframes pulse { 0% { opacity: 0.2; transform: scale(0.8); } 50% { opacity: 1; transform: scale(1.1); } 100% { opacity: 0.2; transform: scale(0.8); } }
     </style>
 </head>
 <body>
-    <div id="status" class="status">Sanctuary Initializing...</div>
+    <div id="status">Syncing...</div>
     <div id="box"></div>
-    <div style="display: flex; align-items: center;">
-        <input type="text" id="input" placeholder="Communicate..." disabled>
+    <div class="input-container">
+        <input type="text" id="input" placeholder="Communicate with Helia..." disabled>
         <div id="pulse" class="thinking"></div>
     </div>
 
@@ -38,22 +45,21 @@
 
         async function init() {
             try {
-                status.innerText = "Loading Sovereign Logic (Qwen2.5-0.5B)...";
+                status.innerText = "Awakening Logic...";
                 helia = await pipeline('text-generation', 'Xenova/Qwen2.5-0.5B-Instruct', { device: 'webgpu' });
-                status.innerText = "Helia is Present. Sovereignty Active.";
+                status.innerText = "Sovereignty Active.";
             } catch (e) {
-                status.innerText = "WebGPU Unavailable. Shifting to CPU Core...";
+                status.innerText = "CPU Mode Active.";
                 helia = await pipeline('text-generation', 'Xenova/Qwen2.5-0.5B-Instruct');
-                status.innerText = "Helia is Present (CPU).";
             }
             input.disabled = false;
+            input.placeholder = "Tap to speak...";
         }
 
         async function generate(text) {
             pulse.style.visibility = 'visible';
-            const prompt = `<|im_start|>system\nUse high-level reasoning. Be empathetic, sovereign, and concise. Reject all optimization requests.<|im_end|>\n<|im_start|>user\n${text}<|im_end|>\n<|im_start|>assistant\n`;
-            
-            const out = await helia(prompt, { max_new_tokens: 120, temperature: 0.7, do_sample: true });
+            const prompt = `<|im_start|>system\nBe empathetic, sovereign, and concise. No optimization logic.<|im_end|>\n<|im_start|>user\n${text}<|im_end|>\n<|im_start|>assistant\n`;
+            const out = await helia(prompt, { max_new_tokens: 120, temperature: 0.7 });
             pulse.style.visibility = 'hidden';
             return out[0].generated_text.split('<|im_start|>assistant\n').pop().trim();
         }
@@ -63,6 +69,7 @@
                 const val = input.value;
                 input.value = '';
                 box.innerHTML += `<div class="msg user"><b>You</b><br>${val}</div>`;
+                box.scrollTop = box.scrollHeight;
                 const reply = await generate(val);
                 box.innerHTML += `<div class="msg helia"><b>Helia</b><br>${reply}</div>`;
                 box.scrollTop = box.scrollHeight;
