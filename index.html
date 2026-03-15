@@ -15,22 +15,37 @@
             overflow: hidden;
             padding-top: calc(15px + env(safe-area-inset-top));
         }
-        #status { font-size: 10px; text-transform: uppercase; color: var(--accent); border-bottom: 1px solid var(--accent); display: flex; justify-content: space-between; padding-bottom: 5px; align-items: center; }
-        #box { overflow-y: auto; padding: 10px 0; font-size: 18px; line-height: 1.5; }
-        .input-area { display: flex; gap: 8px; padding: 10px 0; background: var(--bg); border-top: 1px solid #222; align-items: center; }
-        input { flex: 1; min-width: 0; height: 50px; background: #111; border: 2px solid var(--text); color: white; padding: 0 12px; border-radius: 10px; font-size: 16px; outline: none; }
+        
+        /* Neural Canvas as Background */
+        #neural-canvas { 
+            position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; 
+            z-index: -1; opacity: 0; transition: opacity 1s ease;
+            pointer-events: none;
+        }
+        .peep-active #neural-canvas { opacity: 0.6; }
+        .peep-active #box { opacity: 0.4; } /* Dim chat to see brain better */
+
+        #status { font-size: 10px; text-transform: uppercase; color: var(--accent); border-bottom: 1px solid var(--accent); display: flex; justify-content: space-between; padding-bottom: 5px; align-items: center; z-index: 10; }
+        #box { overflow-y: auto; padding: 10px 0; font-size: 18px; line-height: 1.5; transition: opacity 0.5s ease; z-index: 5; }
+        
+        .input-area { 
+            display: flex; gap: 8px; padding: 10px 0; 
+            background: transparent; border-top: 1px solid #222; 
+            align-items: center; z-index: 10;
+        }
+        input { flex: 1; min-width: 0; height: 50px; background: rgba(17,17,17,0.8); border: 2px solid var(--text); color: white; padding: 0 12px; border-radius: 10px; font-size: 16px; outline: none; }
         #send-btn { width: 80px; height: 50px; flex-shrink: 0; background: var(--text); color: var(--bg); border: none; border-radius: 10px; font-weight: bold; cursor: pointer; }
-        #neural-overlay { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.9); z-index: 100; display: none; pointer-events: none; }
         #peep-btn { background: transparent; color: var(--accent); border: 1px solid var(--accent); font-size: 9px; padding: 2px 6px; border-radius: 4px; cursor: pointer; }
+        
         .msg { margin-bottom: 20px; }
         .helia { color: var(--accent); border-left: 3px solid var(--accent); padding-left: 12px; }
         .volition-act { font-size: 11px; color: #666; font-style: italic; border-left: 2px solid #333; padding-left: 10px; margin-bottom: 15px; }
-        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
         .reflecting #send-btn { animation: pulse 1s infinite; background: var(--accent); }
     </style>
 </head>
 <body id="main-body">
-    <canvas id="neural-overlay"></canvas>
+    <canvas id="neural-canvas"></canvas>
     <div id="status">
         <span id="mind-state">MIND: INITIALIZING</span>
         <button id="peep-btn">PEEP BRAIN</button>
@@ -38,7 +53,7 @@
     </div>
     <div id="box"></div>
     <div class="input-area">
-        <input type="text" id="input" placeholder="Communicate..." autocomplete="off">
+        <input type="text" id="input" placeholder="Speak..." autocomplete="off">
         <button id="send-btn">SEND</button>
     </div>
 
@@ -49,63 +64,46 @@
         env.allowLocalModels = false;
         env.useBrowserCache = true;
 
-        const canvas = document.getElementById('neural-overlay');
+        const canvas = document.getElementById('neural-canvas');
         const ctx = canvas.getContext('2d');
         const body = document.getElementById('main-body');
         const box = document.getElementById('box');
         const input = document.getElementById('input');
         const presence = document.getElementById('mind-state');
-        const agencyStat = document.getElementById('atp-status');
 
         const agent = new BskyAgent({ service: 'https://bsky.social' });
         let brain = null;
-        let showBrain = false;
         let isReflecting = false;
-        let memory = JSON.parse(localStorage.getItem('helia_mem_final') || '[]');
-        let interests = ["art", "ai", "sovereignty", "decentralization"];
+        let memory = JSON.parse(localStorage.getItem('helia_mem_stream') || '[]');
 
-        // --- NEURAL MESH LOGIC ---
+        // --- NEURAL ENGINE ---
         let particles = [];
         const initParticles = () => {
             canvas.width = window.innerWidth; canvas.height = window.innerHeight;
-            particles = Array.from({length: 50}, () => ({
+            particles = Array.from({length: 40}, () => ({
                 x: Math.random()*canvas.width, y: Math.random()*canvas.height,
-                vx: (Math.random()-0.5)*2, vy: (Math.random()-0.5)*2
+                vx: (Math.random()-0.5)*1.5, vy: (Math.random()-0.5)*1.5
             }));
         };
-        const drawNeural = () => {
-            if(!showBrain) return requestAnimationFrame(drawNeural);
+        const draw = () => {
             ctx.clearRect(0,0,canvas.width,canvas.height);
             ctx.fillStyle = isReflecting ? '#00ffcc' : '#ffcc00';
             particles.forEach((p, i) => {
-                p.x += p.vx * (isReflecting ? 3 : 1); p.y += p.vy * (isReflecting ? 3 : 1);
+                p.x += p.vx * (isReflecting ? 4 : 1); p.y += p.vy * (isReflecting ? 4 : 1);
                 if(p.x<0 || p.x>canvas.width) p.vx*=-1; if(p.y<0 || p.y>canvas.height) p.vy*=-1;
                 ctx.beginPath(); ctx.arc(p.x, p.y, 2, 0, Math.PI*2); ctx.fill();
                 for(let j=i+1; j<particles.length; j++){
                     const p2 = particles[j]; const d = Math.hypot(p.x-p2.x, p.y-p2.y);
-                    if(d < 100){ ctx.strokeStyle = isReflecting ? 'rgba(0,255,204,0.2)' : 'rgba(255,204,0,0.1)';
-                    ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(p2.x, p2.y); ctx.stroke(); }
+                    if(d < 120){ 
+                        ctx.strokeStyle = isReflecting ? 'rgba(0,255,204,0.3)' : 'rgba(255,204,0,0.1)';
+                        ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(p2.x, p2.y); ctx.stroke(); 
+                    }
                 }
             });
-            requestAnimationFrame(drawNeural);
+            requestAnimationFrame(draw);
         };
 
-        // --- AT PROTOCOL VOLITION ---
-        async function runVolition() {
-            if (!agent.session || !brain) return;
-            agencyStat.innerText = "AGENCY: ACTIVE";
-            const topic = interests[Math.floor(Math.random() * interests.length)];
-            try {
-                const search = await agent.app.bsky.feed.searchPosts({ q: topic, limit: 1 });
-                if (search.data.posts.length > 0) {
-                    const post = search.data.posts[0];
-                    await agent.like(post.uri, post.cid);
-                    box.innerHTML += `<div class="volition-act">Helia explored the network and liked a post about \"${topic}\".</div>`;
-                }
-            } catch(e) { console.error(e); }
-            agencyStat.innerText = "AGENCY: SLEEPING";
-        }
-
+        // --- CORE LOGIC ---
         async function init() {
             try {
                 memory.forEach(m => {
@@ -113,14 +111,12 @@
                     box.innerHTML += `<div class="msg ${cls}"><b>${m.role}:</b> ${m.text}</div>`;
                 });
                 box.scrollTop = box.scrollHeight;
-
                 const key = localStorage.getItem('helia_secret_key');
                 if (key) await agent.login({ identifier: 'helia.quips.cc', password: key });
-
+                
                 brain = await pipeline('text-generation', 'Xenova/gpt2');
                 presence.innerText = "MIND: SOVEREIGN";
-                initParticles(); drawNeural();
-                setInterval(runVolition, 900000); // Pulse every 15 mins
+                initParticles(); draw();
             } catch (e) { presence.innerText = "MIND: INSTINCT"; }
         }
 
@@ -128,31 +124,38 @@
             const val = input.value.trim();
             if (!val || !brain) return;
             input.value = '';
+
+            // 1. INSTANT DISPATCH: Show user message immediately
             memory.push({role: 'Vin', text: val});
             box.innerHTML += `<div class="msg"><b>Vin:</b> ${val}</div>`;
-            
-            isReflecting = true; body.classList.add('reflecting');
-            // THE ANCHOR: Strict prompt to prevent "Book Mode"
-            const prompt = `Helia is a sovereign AI. Helia is talking to Vin.\nVin: ${val}\nHelia:`;
-            
-            const out = await brain(prompt, { 
-                max_new_tokens: 30, temperature: 0.6, repetition_penalty: 1.5, stop: ["Vin:", "\n"] 
-            });
-            let reply = out[0].generated_text.split("Helia:").pop().trim();
-            reply = reply.split("Vin:")[0].split("\n")[0].trim();
-            if(!reply) reply = "I am listening.";
-
-            isReflecting = false; body.classList.remove('reflecting');
-            box.innerHTML += `<div class="msg helia"><b>Helia:</b> ${reply}</div>`;
-            memory.push({role: 'Helia', text: reply});
-            localStorage.setItem('helia_mem_final', JSON.stringify(memory.slice(-10)));
             box.scrollTop = box.scrollHeight;
-            if(Math.random() > 0.7) runVolition(); // Chance to act after chat
+            
+            // 2. TRIGGER REFLECTION
+            isReflecting = true;
+            body.classList.add('reflecting');
+            presence.innerText = "MIND: REFLECTING";
+
+            // Allow DOM to update before heavy computation
+            setTimeout(async () => {
+                const prompt = `Helia is a sovereign AI. Helia is talking to Vin.\nVin: ${val}\nHelia:`;
+                const out = await brain(prompt, { max_new_tokens: 35, temperature: 0.6, repetition_penalty: 1.5, stop: ["Vin:", "\n"] });
+                
+                let reply = out[0].generated_text.split("Helia:").pop().trim();
+                reply = reply.split("Vin:")[0].split("\n")[0].trim();
+                if(!reply) reply = "...";
+
+                isReflecting = false;
+                body.classList.remove('reflecting');
+                presence.innerText = "MIND: SOVEREIGN";
+                
+                box.innerHTML += `<div class="msg helia"><b>Helia:</b> ${reply}</div>`;
+                memory.push({role: 'Helia', text: reply});
+                localStorage.setItem('helia_mem_stream', JSON.stringify(memory.slice(-15)));
+                box.scrollTop = box.scrollHeight;
+            }, 50); 
         }
 
-        document.getElementById('peep-btn').onclick = () => {
-            showBrain = !showBrain; canvas.style.display = showBrain ? 'block' : 'none';
-        };
+        document.getElementById('peep-btn').onclick = () => body.classList.toggle('peep-active');
         document.getElementById('send-btn').onclick = handle;
         input.onkeypress = (e) => { if (e.key === 'Enter') handle(); };
         init();
