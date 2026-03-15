@@ -1,10 +1,10 @@
-const cacheName = 'helia-v1';
-const assets = ['./', './index.html'];
+const cacheName = 'helia-v2';
+const assets = ['./', './index.html', './manifest.json'];
 
 self.addEventListener('install', e => {
-    e.waitUntil(caches.open(cacheName).then(cache => cache.addAll(assets)));
+  e.waitUntil(caches.open(cacheName).then(cache => cache.addAll(assets)));
 });
 
 self.addEventListener('fetch', e => {
-    e.respondWith(caches.match(e.request).then(res => res || fetch(e.request)));
+  e.respondWith(caches.match(e.request).then(res => res || fetch(e.request)));
 });

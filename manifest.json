@@ -1,0 +1,11 @@
+{
+  "name": "Helia-AI",
+  "short_name": "Helia",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#050505",
+  "theme_color": "#ffcc00",
+  "icons": [
+    { "src": "https://helia.quips.cc/icon.png", "sizes": "192x192", "type": "image/png" }
+  ]
+}
