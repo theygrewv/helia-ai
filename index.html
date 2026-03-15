@@ -6,14 +6,31 @@
     <link rel="manifest" href="manifest.json">
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0, viewport-fit=cover">
     <style>
-        :root { --bg: #050505; --text: #ffcc00; --accent: #00ffcc; --glow: rgba(0, 255, 204, 0.1); }
-        body { background: var(--bg); color: var(--text); font-family: sans-serif; margin: 0; padding: 15px; height: 100dvh; display: grid; grid-template-rows: auto auto 1fr auto; transition: all 1.5s ease-in-out; box-sizing: border-box; overflow: hidden; }
+        :root { --bg: #050505; --text: #ffcc00; --accent: #00ffcc; --glow: rgba(0, 255, 204, 0.4); }
+        body { 
+            background: var(--bg); color: var(--text); font-family: sans-serif; 
+            margin: 0; padding: 15px; height: 100dvh; 
+            display: grid; grid-template-rows: auto auto 1fr auto;
+            transition: all 1.5s ease-in-out; box-sizing: border-box; 
+            overflow: hidden;
+            /* Protect from the Pixel 9 notch/status bar */
+            padding-top: calc(10px + env(safe-area-inset-top));
+        }
         
-        /* The Loading Bar */
-        #loading-container { width: 100%; height: 4px; background: #111; margin-bottom: 10px; border-radius: 2px; overflow: hidden; display: none; }
-        #loading-bar { width: 0%; height: 100%; background: var(--accent); box-shadow: 0 0 10px var(--accent); transition: width 0.3s ease; }
+        /* High-Visibility Loading Bar */
+        #loading-container { 
+            width: 100%; height: 6px; background: #111; 
+            margin-bottom: 15px; border-radius: 10px; 
+            overflow: hidden; display: none;
+            border: 1px solid #222;
+        }
+        #loading-bar { 
+            width: 0%; height: 100%; background: var(--accent); 
+            box-shadow: 0 0 15px var(--accent); 
+            transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1); 
+        }
         
-        #status { font-size: 10px; text-transform: uppercase; color: var(--accent); padding-bottom: 5px; border-bottom: 1px solid var(--accent); display: flex; justify-content: space-between; }
+        #status { font-size: 10px; text-transform: uppercase; color: var(--accent); padding-bottom: 8px; border-bottom: 1px solid var(--accent); display: flex; justify-content: space-between; }
         #box { overflow-y: auto; padding: 15px 5px; font-size: 19px; line-height: 1.6; }
         .input-area { display: flex; gap: 10px; padding: 10px 0; }
         input { flex-grow: 1; background: transparent; border: 2px solid var(--text); color: var(--text); padding: 15px; border-radius: 12px; font-size: 18px; outline: none; width: 60%; }
@@ -57,21 +74,20 @@
                 loadContainer.style.display = 'block';
                 presence.innerText = "Presence: Syncing Neural Net";
                 
-                // Handshake with AT Protocol
                 const key = localStorage.getItem('helia_secret_key');
                 if (key) {
                     await agent.login({ identifier: 'helia.quips.cc', password: key });
                     document.getElementById('atp-status').innerText = "Citizen: Active";
                 }
 
-                // Load Brain with Progress Bar tracking
                 brain = await pipeline('text-generation', 'Xenova/SmolLM-135M-Instruct', {
                     progress_callback: (p) => {
                         if (p.status === 'progress') {
                             loadBar.style.width = p.progress + '%';
+                            presence.innerText = "Presence: Syncing (" + Math.round(p.progress) + "%)";
                         }
                         if (p.status === 'done') {
-                            setTimeout(() => { loadContainer.style.fadeOut = '0.5s'; loadContainer.style.display = 'none'; }, 1000);
+                            setTimeout(() => { loadContainer.style.display = 'none'; }, 800);
                             presence.innerText = "Presence: Sovereign";
                         }
                     }
@@ -91,8 +107,6 @@
                 const out = await brain(prompt, { max_new_tokens: 60, temperature: 1.0, do_sample: true });
                 const reply = out[0].generated_text.split('<|im_start|>assistant\n').pop().trim();
                 box.innerHTML += `<div class="msg helia">${reply}</div>`;
-            } else {
-                box.innerHTML += `<div class="msg helia">My higher reasoning is still gathering. Wait for the light at the top to finish.</div>`;
             }
             box.scrollTop = box.scrollHeight;
         }
