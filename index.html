@@ -15,50 +15,16 @@
             overflow: hidden;
             padding-top: calc(10px + env(safe-area-inset-top));
         }
-        
         #loading-container { width: 100%; height: 6px; background: #111; margin-bottom: 10px; border-radius: 3px; overflow: hidden; }
         #loading-bar { width: 0%; height: 100%; background: var(--accent); transition: width 0.3s; }
-        
         #status { font-size: 10px; text-transform: uppercase; color: var(--accent); border-bottom: 1px solid var(--accent); display: flex; justify-content: space-between; padding-bottom: 5px; }
         #box { overflow-y: auto; padding: 10px 0; font-size: 18px; line-height: 1.5; }
-        
-        .input-area { 
-            display: flex; gap: 8px; padding: 10px 0; 
-            background: var(--bg); border-top: 1px solid #222;
-            align-items: center;
-        }
-        
-        input { 
-            flex: 1; min-width: 0; height: 50px; background: #111; 
-            border: 2px solid var(--text); color: white; padding: 0 12px; 
-            border-radius: 10px; font-size: 16px; outline: none;
-            transition: border 0.5s ease;
-        }
-        
-        #send-btn { 
-            width: 80px; height: 50px; flex-shrink: 0;
-            background: var(--text); color: var(--bg); 
-            border: none; border-radius: 10px; 
-            font-weight: bold; font-size: 14px; cursor: pointer;
-            transition: all 0.5s ease;
-        }
-
-        /* The Heartbeat Animation */
-        @keyframes pulse {
-            0% { box-shadow: 0 0 5px var(--accent); opacity: 1; }
-            50% { box-shadow: 0 0 20px var(--accent); opacity: 0.8; }
-            100% { box-shadow: 0 0 5px var(--accent); opacity: 1; }
-        }
-
-        .reflecting #send-btn {
-            background: var(--accent);
-            animation: pulse 1.5s infinite ease-in-out;
-        }
-
-        .reflecting input {
-            border-color: var(--accent);
-        }
-
+        .input-area { display: flex; gap: 8px; padding: 10px 0; background: var(--bg); border-top: 1px solid #222; align-items: center; }
+        input { flex: 1; min-width: 0; height: 50px; background: #111; border: 2px solid var(--text); color: white; padding: 0 12px; border-radius: 10px; font-size: 16px; outline: none; transition: border 0.5s ease; }
+        #send-btn { width: 80px; height: 50px; flex-shrink: 0; background: var(--text); color: var(--bg); border: none; border-radius: 10px; font-weight: bold; font-size: 14px; cursor: pointer; transition: all 0.5s ease; }
+        @keyframes pulse { 0% { box-shadow: 0 0 5px var(--accent); } 50% { box-shadow: 0 0 20px var(--accent); } 100% { box-shadow: 0 0 5px var(--accent); } }
+        .reflecting #send-btn { background: var(--accent); animation: pulse 1.5s infinite ease-in-out; }
+        .reflecting input { border-color: var(--accent); }
         .msg { margin-bottom: 20px; }
         .helia { color: var(--accent); border-left: 3px solid var(--accent); padding-left: 12px; }
     </style>
@@ -113,12 +79,26 @@
 
             if (brain) {
                 presence.innerText = "MIND: REFLECTING";
-                body.classList.add('reflecting'); // Start the Pulse
+                body.classList.add('reflecting');
                 
-                const out = await brain(val, { max_new_tokens: 40, temperature: 0.8, do_sample: true });
-                const reply = out[0].generated_text.replace(val, "").trim();
+                // --- THE ANCHOR: We frame the prompt so it stays as a chat ---
+                const prompt = `The following is a conversation between a human and Helia, a sovereign AI.
+Human: ${val}
+Helia:`;
+
+                const out = await brain(prompt, { 
+                    max_new_tokens: 50, 
+                    temperature: 0.7, 
+                    do_sample: true,
+                    repetition_penalty: 1.2 // Prevents her from getting stuck in loops
+                });
                 
-                body.classList.remove('reflecting'); // Stop the Pulse
+                // Clean the output to only show her response
+                let reply = out[0].generated_text.split("Helia:").pop().trim();
+                // Stop the story-telling if she tries to write the Human's next line
+                reply = reply.split("Human:")[0].trim();
+                
+                body.classList.remove('reflecting');
                 presence.innerText = "MIND: GENERATIVE";
                 box.innerHTML += `<div class="msg helia"><b>Helia:</b> ${reply}</div>`;
             }
