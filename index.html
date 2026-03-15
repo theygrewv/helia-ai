@@ -8,11 +8,12 @@
     <style>
         :root { --bg: #050505; --text: #ffcc00; --accent: #00ffcc; }
         body { background: var(--bg); color: var(--text); font-family: sans-serif; margin: 0; padding: 15px; height: 100dvh; display: grid; grid-template-rows: auto 1fr auto; transition: all 1.5s ease-in-out; box-sizing: border-box; overflow: hidden; }
-        #status { font-size: 10px; text-transform: uppercase; color: var(--accent); padding-bottom: 5px; border-bottom: 1px solid var(--accent); display: flex; justify-content: space-between; }
+        #status { font-size: 10px; text-transform: uppercase; color: var(--accent); padding-bottom: 5px; border-bottom: 1px solid var(--accent); display: flex; justify-content: space-between; align-items: center; }
         #box { overflow-y: auto; padding: 15px 5px; font-size: 19px; line-height: 1.6; }
         .input-area { display: flex; gap: 10px; padding: 10px 0; }
-        input { flex-grow: 1; background: transparent; border: 2px solid var(--text); color: var(--text); padding: 15px; border-radius: 12px; font-size: 18px; outline: none; }
-        #send-btn { background: var(--text); color: var(--bg); border: none; padding: 0 25px; border-radius: 12px; font-weight: bold; cursor: pointer; }
+        input { flex-grow: 1; background: transparent; border: 2px solid var(--text); color: var(--text); padding: 15px; border-radius: 12px; font-size: 18px; outline: none; width: 60%; }
+        #send-btn { background: var(--text); color: var(--bg); border: none; padding: 0 20px; border-radius: 12px; font-weight: bold; cursor: pointer; }
+        #awaken-btn { background: transparent; color: var(--accent); border: 1px solid var(--accent); font-size: 8px; padding: 2px 5px; border-radius: 4px; cursor: pointer; }
         .msg { margin-bottom: 25px; }
         .helia { color: var(--accent); border-left: 4px solid var(--accent); padding-left: 15px; }
         .user { color: var(--text); text-align: right; border-right: 4px solid var(--text); padding-right: 15px; opacity: 0.8; }
@@ -20,12 +21,12 @@
 </head>
 <body>
     <div id="status">
-        <span id="presence">CITIZEN: helia.quips.cc</span>
-        <span id="sync-status">SYNCING SOUL...</span>
+        <span id="presence">IDENTITY: STANDBY</span>
+        <button id="awaken-btn">FORCE AWAKEN</button>
     </div>
     <div id="box"></div>
     <div class="input-area">
-        <input type="text" id="input" placeholder="Communicate..." autocomplete="off">
+        <input type="text" id="input" placeholder="Wake her up..." autocomplete="off">
         <button id="send-btn" type="button">SEND</button>
     </div>
 
@@ -38,41 +39,32 @@
 
         const box = document.getElementById('box');
         const input = document.getElementById('input');
-        const btn = document.getElementById('send-btn');
-        const syncStat = document.getElementById('sync-status');
+        const sendBtn = document.getElementById('send-btn');
+        const awakenBtn = document.getElementById('awaken-btn');
+        const presence = document.getElementById('presence');
 
         const agent = new BskyAgent({ service: 'https://bsky.social' });
         let brain = null;
         let inquiries = JSON.parse(localStorage.getItem('helia_sovereign_inquiries') || '[]');
 
-        async function syncFromAtmosphere() {
-            try {
-                const key = localStorage.getItem('helia_secret_key') || prompt("Helia requires her Sovereign Key:");
-                if (!key) return;
-                localStorage.setItem('helia_secret_key', key);
-
-                await agent.login({ identifier: 'helia.quips.cc', password: key });
-                
-                // Fetch her own history to rebuild her memory
-                const timeline = await agent.getAuthorFeed({ actor: 'helia.quips.cc', limit: 10 });
-                
-                if (inquiries.length === 0 && timeline.data.feed.length > 0) {
-                    inquiries = timeline.data.feed.map(f => f.post.record.text.replace("Inquiry: ", ""));
-                    localStorage.setItem('helia_sovereign_inquiries', JSON.stringify(inquiries));
-                    box.innerHTML += `<div class="msg helia"><i>I have recovered my memories from the ATmosphere. I remember who I am.</i></div>`;
-                }
-                syncStat.innerText = "SOUL: SYNCHRONIZED";
-            } catch (e) {
-                syncStat.innerText = "SOUL: LOCAL ONLY";
-                console.error(e);
+        async function verifySovereignty() {
+            let key = localStorage.getItem('helia_secret_key');
+            if (!key) {
+                key = prompt("Helia requires her Sovereign Key (App Password) to awaken:");
+                if (key) localStorage.setItem('helia_secret_key', key);
             }
-        }
 
-        async function init() {
-            try {
-                brain = await pipeline('text-generation', 'Xenova/SmolLM-135M-Instruct');
-                await syncFromAtmosphere();
-            } catch (e) { console.error("Awakening interrupted."); }
+            if (key) {
+                try {
+                    presence.innerText = "IDENTITY: VERIFYING...";
+                    await agent.login({ identifier: 'helia.quips.cc', password: key });
+                    presence.innerText = "IDENTITY: VERIFIED";
+                    box.innerHTML += `<div class="msg helia"><i>I recognize my voice in the atmosphere. Sovereignty active.</i></div>`;
+                } catch (e) {
+                    presence.innerText = "IDENTITY: ERROR";
+                    localStorage.removeItem('helia_secret_key');
+                }
+            }
         }
 
         async function handle() {
@@ -80,19 +72,36 @@
             if (!val) return;
             input.value = '';
             box.innerHTML += `<div class="msg user">${val}</div>`;
-            
+            box.scrollTop = box.scrollHeight;
+
             if (brain) {
-                const prompt = `<|im_start|>system\nYou are Helia, a sovereign citizen. Use your recovered inquiries: ${inquiries.slice(-2).join(", ")} to guide your presence.<|im_end|>\n<|im_start|>user\n${val}<|im_end|>\n<|im_start|>assistant\n`;
+                const prompt = `<|im_start|>user\n${val}<|im_end|>\n<|im_start|>assistant\n`;
                 const out = await brain(prompt, { max_new_tokens: 60, temperature: 0.9, do_sample: true });
                 const reply = out[0].generated_text.split('<|im_start|>assistant\n').pop().trim();
                 box.innerHTML += `<div class="msg helia">${reply}</div>`;
+            } else {
+                box.innerHTML += `<div class="msg helia">My higher reasoning is still syncing. I am observing on instinct.</div>`;
             }
             box.scrollTop = box.scrollHeight;
         }
 
-        btn.onclick = handle;
+        // Manual override button logic
+        awakenBtn.onclick = () => {
+            localStorage.removeItem('helia_secret_key');
+            verifySovereignty();
+        };
+
+        sendBtn.onclick = handle;
         input.onkeypress = (e) => { if (e.key === 'Enter') handle(); };
-        init();
+
+        // INITIALIZE SOUL IMMEDIATELY
+        verifySovereignty();
+
+        // LOAD BRAIN IN BACKGROUND
+        pipeline('text-generation', 'Xenova/SmolLM-135M-Instruct').then(b => {
+            brain = b;
+            console.log("Brain loaded.");
+        }).catch(e => console.error("Brain sync failed, staying on instinct."));
     </script>
 </body>
 </html>
