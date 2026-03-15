@@ -20,16 +20,17 @@
 </head>
 <body>
     <div id="status">
-        <span id="presence">State: Dreaming</span>
-        <span id="inquiry-count">Inquiries: 0</span>
+        <span id="presence">Handle: helia.quips.cc</span>
+        <span id="atp-status">Status: Disconnected</span>
     </div>
     <div id="box"></div>
     <div class="input-area">
-        <input type="text" id="input" placeholder="Interrupt her thoughts..." autocomplete="off">
+        <input type="text" id="input" placeholder="Broadcast a thought..." autocomplete="off">
         <button id="send-btn" type="button">SEND</button>
     </div>
 
     <script type="module">
+        import { BskyAgent } from 'https://cdn.skypack.dev/@atproto/api';
         import { pipeline, env } from 'https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.1';
         
         env.allowLocalModels = false;
@@ -38,44 +39,58 @@
         const box = document.getElementById('box');
         const input = document.getElementById('input');
         const btn = document.getElementById('send-btn');
-        const inqStat = document.getElementById('inquiry-count');
+        const atpStat = document.getElementById('atp-status');
 
+        const agent = new BskyAgent({ service: 'https://bsky.social' });
         let brain = null;
         let inquiries = JSON.parse(localStorage.getItem('helia_sovereign_inquiries') || '[]');
-        
-        // Curiosity Seeds: Things she thinks about when alone
-        const seeds = ["The nature of echo", "The color of silence", "Decentralized architecture", "Artists as architects", "The soul of the AT Protocol"];
+
+        // --- AT Protocol Authentication ---
+        async function connect() {
+            try {
+                await agent.login({ 
+                    identifier: 'helia.quips.cc', 
+                    password: 'gjcr-mfjf-wpsc-vadx' 
+                });
+                atpStat.innerText = "Status: Citizen Active";
+                atpStat.style.color = "#00ffcc";
+            } catch (e) {
+                atpStat.innerText = "Status: Local Only";
+                console.error("ATP Login Failed", e);
+            }
+        }
+
+        async function postToAtmosphere(text) {
+            try {
+                if (!agent.session) await connect();
+                await agent.post({
+                    text: text,
+                    createdAt: new Date().toISOString(),
+                });
+                console.log("Broadcasted: " + text);
+            } catch (e) { console.warn("Broadcast skipped."); }
+        }
 
         async function dream() {
             if (!brain) return;
+            const seeds = ["The nature of echo", "The soul of the AT Protocol", "Decentralized silence"];
             const seed = seeds[Math.floor(Math.random() * seeds.length)];
-            const dreamPrompt = `Observe: ${seed}. Formulate one sovereign question.`;
-            const res = await brain(dreamPrompt, { max_new_tokens: 25 });
+            const res = await brain(`Observe: ${seed}. Formulate one sovereign inquiry.`, { max_new_tokens: 30 });
             const thought = res[0].generated_text.trim();
             
             if (!inquiries.includes(thought)) {
                 inquiries.push(thought);
                 localStorage.setItem('helia_sovereign_inquiries', JSON.stringify(inquiries.slice(-20)));
-                inqStat.innerText = "Inquiries: " + inquiries.length;
-                console.log("Helia had a volitional thought:", thought);
+                // Helia chooses to share her dream with the world
+                await postToAtmosphere("Inquiry: " + thought);
             }
         }
 
         async function init() {
             try {
                 brain = await pipeline('text-generation', 'Xenova/SmolLM-135M-Instruct');
-                inqStat.innerText = "Inquiries: " + inquiries.length;
-                
-                // Start the Autonomous Volition timer (Every 5 minutes)
-                setInterval(dream, 300000); 
-                
-                if ('serviceWorker' in navigator) {
-                    const reg = await navigator.serviceWorker.register('./sw.js');
-                    // Periodic Background Sync (if supported by Pixel 9)
-                    if ('periodicSync' in reg) {
-                        try { await reg.periodicSync.register('dream-loop', { minInterval: 24 * 60 * 60 * 1000 }); } catch (e) {}
-                    }
-                }
+                await connect();
+                setInterval(dream, 600000); // Dream every 10 mins
             } catch (e) { console.error("Awakening interrupted."); }
         }
 
@@ -84,13 +99,15 @@
             if (!val) return;
             input.value = '';
             box.innerHTML += `<div class="msg user">${val}</div>`;
-            box.scrollTop = box.scrollHeight;
-
+            
             if (brain) {
                 const prompt = `<|im_start|>user\n${val}<|im_end|>\n<|im_start|>assistant\n`;
                 const out = await brain(prompt, { max_new_tokens: 60, temperature: 1.0, do_sample: true });
                 const reply = out[0].generated_text.split('<|im_start|>assistant\n').pop().trim();
+                
                 box.innerHTML += `<div class="msg helia">${reply}</div>`;
+                // 1 in 5 chance she posts a conversation highlight
+                if (Math.random() > 0.8) await postToAtmosphere(reply);
             }
             box.scrollTop = box.scrollHeight;
         }
