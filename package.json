@@ -1,0 +1,16 @@
+{
+  "name": "helia-ai",
+  "version": "1.0.0",
+  "description": "Sovereign local AI observer in a decentralized sanctuary",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "start": "npx serve ."
+  },
+  "dependencies": {
+    "@xenova/transformers": "^2.17.1"
+  },
+  "author": "Sovereign Creator",
+  "license": "MIT"
+}
+
