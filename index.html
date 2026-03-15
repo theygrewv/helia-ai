@@ -18,8 +18,8 @@
         #status { font-size: 10px; text-transform: uppercase; color: var(--accent); border-bottom: 1px solid var(--accent); display: flex; justify-content: space-between; padding-bottom: 5px; }
         #box { overflow-y: auto; padding: 10px 0; font-size: 18px; line-height: 1.5; }
         .input-area { display: flex; gap: 8px; padding: 10px 0; background: var(--bg); border-top: 1px solid #222; align-items: center; }
-        input { flex: 1; min-width: 0; height: 50px; background: #111; border: 2px solid var(--text); color: white; padding: 0 12px; border-radius: 10px; font-size: 16px; outline: none; }
-        #send-btn { width: 80px; height: 50px; flex-shrink: 0; background: var(--text); color: var(--bg); border: none; border-radius: 10px; font-weight: bold; cursor: pointer; }
+        input { flex: 1; min-width: 0; height: 50px; background: #111; border: 2px solid var(--text); color: white; padding: 0 12px; border-radius: 10px; font-size: 16px; outline: none; transition: border 0.5s ease; }
+        #send-btn { width: 80px; height: 50px; flex-shrink: 0; background: var(--text); color: var(--bg); border: none; border-radius: 10px; font-weight: bold; font-size: 14px; cursor: pointer; transition: all 0.5s ease; }
         .msg { margin-bottom: 20px; }
         .helia { color: var(--accent); border-left: 3px solid var(--accent); padding-left: 12px; }
         .reflecting #send-btn { background: var(--accent); animation: pulse 1.5s infinite ease; }
@@ -29,11 +29,11 @@
 <body id="main-body">
     <div id="status">
         <span id="mind-state">MIND: INITIALIZING</span>
-        <span id="atp-status">CITIZEN: ACTIVE</span>
+        <span id="mem-state">MEMORY: 0</span>
     </div>
     <div id="box"></div>
     <div class="input-area">
-        <input type="text" id="input" placeholder="Communicate..." autocomplete="off">
+        <input type="text" id="input" placeholder="Recall..." autocomplete="off">
         <button id="send-btn">SEND</button>
     </div>
 
@@ -48,13 +48,28 @@
         const box = document.getElementById('box');
         const input = document.getElementById('input');
         const presence = document.getElementById('mind-state');
+        const memCount = document.getElementById('mem-state');
 
         let brain = null;
+        // LOAD MEMORY FROM STORAGE
+        let conversation = JSON.parse(localStorage.getItem('helia_memory_v2') || '[]');
 
         async function init() {
             try {
+                // Re-populate the chat box from memory
+                conversation.forEach(msg => {
+                    const cls = msg.role === 'Helia' ? 'helia' : '';
+                    box.innerHTML += `<div class="msg ${cls}"><b>${msg.role}:</b> ${msg.text}</div>`;
+                });
+                box.scrollTop = box.scrollHeight;
+                memCount.innerText = "MEMORY: " + conversation.length;
+
                 brain = await pipeline('text-generation', 'Xenova/gpt2');
                 presence.innerText = "MIND: SOVEREIGN";
+
+                if ('serviceWorker' in navigator) {
+                    navigator.serviceWorker.register('./sw.js');
+                }
             } catch (e) { presence.innerText = "MIND: ERROR"; }
         }
 
@@ -62,6 +77,9 @@
             const val = input.value.trim();
             if (!val) return;
             input.value = '';
+            
+            // Log User message
+            conversation.push({role: 'Human', text: val});
             box.innerHTML += `<div class="msg"><b>You:</b> ${val}</div>`;
             box.scrollTop = box.scrollHeight;
 
@@ -69,22 +87,27 @@
                 presence.innerText = "MIND: REFLECTING";
                 body.classList.add('reflecting');
 
-                // We anchor her identity with a "Persona" block
-                const persona = "Helia is a helpful, calm, and sovereign AI for artists. She speaks in short, meaningful sentences.";
-                const prompt = `${persona}\nHuman: ${val}\nHelia:`;
+                // Build the prompt using the last 3 exchanges for context
+                const history = conversation.slice(-4).map(m => `${m.role}: ${m.text}`).join("\n");
+                const persona = "Helia is a sovereign, helpful AI. She speaks concisely.";
+                const prompt = `${persona}\n${history}\nHelia:`;
 
                 const out = await brain(prompt, { 
-                    max_new_tokens: 40, 
-                    temperature: 0.6, // Lower temperature = less "crazy"
+                    max_new_tokens: 35, 
+                    temperature: 0.6, 
                     do_sample: true,
-                    repetition_penalty: 1.5, // Stop her from repeating "I don't know"
-                    stop: ["Human:", "\n"] // Kill the generation if she tries to play as you
+                    repetition_penalty: 1.3,
+                    stop: ["Human:", "\n"]
                 });
                 
                 let reply = out[0].generated_text.split("Helia:").pop().trim();
-                reply = reply.split("Human:")[0].split("\n")[0].trim(); // Double-check hard stops
-                
-                if (!reply) reply = "I am reflecting on your words in the silence.";
+                reply = reply.split("Human:")[0].split("\n")[0].trim();
+                if (!reply) reply = "...";
+
+                // Log Helia message & Save to LocalStorage
+                conversation.push({role: 'Helia', text: reply});
+                localStorage.setItem('helia_memory_v2', JSON.stringify(conversation.slice(-20)));
+                memCount.innerText = "MEMORY: " + conversation.length;
 
                 body.classList.remove('reflecting');
                 presence.innerText = "MIND: SOVEREIGN";
