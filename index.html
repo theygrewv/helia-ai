@@ -13,27 +13,30 @@
             margin: 0; padding: 15px; height: 100dvh; 
             display: grid; grid-template-rows: auto auto 1fr 70px; 
             overflow: hidden;
-            padding-top: calc(10px + env(safe-area-inset-top));
+            padding-top: calc(15px + env(safe-area-inset-top));
         }
+        #loading-container { width: 100%; height: 6px; background: #111; margin-bottom: 10px; border-radius: 3px; overflow: hidden; }
+        #loading-bar { width: 0%; height: 100%; background: var(--accent); transition: width 0.3s; }
         #status { font-size: 10px; text-transform: uppercase; color: var(--accent); border-bottom: 1px solid var(--accent); display: flex; justify-content: space-between; padding-bottom: 5px; }
         #box { overflow-y: auto; padding: 10px 0; font-size: 18px; line-height: 1.5; }
         .input-area { display: flex; gap: 8px; padding: 10px 0; background: var(--bg); border-top: 1px solid #222; align-items: center; }
         input { flex: 1; min-width: 0; height: 50px; background: #111; border: 2px solid var(--text); color: white; padding: 0 12px; border-radius: 10px; font-size: 16px; outline: none; transition: border 0.5s ease; }
-        #send-btn { width: 80px; height: 50px; flex-shrink: 0; background: var(--text); color: var(--bg); border: none; border-radius: 10px; font-weight: bold; font-size: 14px; cursor: pointer; transition: all 0.5s ease; }
+        #send-btn { width: 80px; height: 50px; flex-shrink: 0; background: var(--text); color: var(--bg); border: none; border-radius: 10px; font-weight: bold; font-size: 14px; cursor: pointer; }
         .msg { margin-bottom: 20px; }
         .helia { color: var(--accent); border-left: 3px solid var(--accent); padding-left: 12px; }
-        .reflecting #send-btn { background: var(--accent); animation: pulse 1.5s infinite ease; }
-        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
+        .reflecting #send-btn { animation: pulse 1s infinite; background: var(--accent); }
     </style>
 </head>
 <body id="main-body">
+    <div id="loading-container"><div id="loading-bar"></div></div>
     <div id="status">
         <span id="mind-state">MIND: INITIALIZING</span>
-        <span id="mem-state">MEMORY: 0</span>
+        <span id="atp-status">CITIZEN: ACTIVE</span>
     </div>
     <div id="box"></div>
     <div class="input-area">
-        <input type="text" id="input" placeholder="Recall..." autocomplete="off">
+        <input type="text" id="input" placeholder="Communicate..." autocomplete="off">
         <button id="send-btn">SEND</button>
     </div>
 
@@ -48,29 +51,29 @@
         const box = document.getElementById('box');
         const input = document.getElementById('input');
         const presence = document.getElementById('mind-state');
-        const memCount = document.getElementById('mem-state');
+        const loadBar = document.getElementById('loading-bar');
 
         let brain = null;
-        // LOAD MEMORY FROM STORAGE
-        let conversation = JSON.parse(localStorage.getItem('helia_memory_v2') || '[]');
+        let memory = JSON.parse(localStorage.getItem('helia_mem_v3') || '[]');
 
         async function init() {
             try {
-                // Re-populate the chat box from memory
-                conversation.forEach(msg => {
-                    const cls = msg.role === 'Helia' ? 'helia' : '';
-                    box.innerHTML += `<div class="msg ${cls}"><b>${msg.role}:</b> ${msg.text}</div>`;
+                // Populate history
+                memory.forEach(m => {
+                    box.innerHTML += `<div class="msg ${m.role === 'Helia' ? 'helia' : ''}"><b>${m.role}:</b> ${m.text}</div>`;
                 });
                 box.scrollTop = box.scrollHeight;
-                memCount.innerText = "MEMORY: " + conversation.length;
 
-                brain = await pipeline('text-generation', 'Xenova/gpt2');
-                presence.innerText = "MIND: SOVEREIGN";
-
-                if ('serviceWorker' in navigator) {
-                    navigator.serviceWorker.register('./sw.js');
-                }
-            } catch (e) { presence.innerText = "MIND: ERROR"; }
+                brain = await pipeline('text-generation', 'Xenova/gpt2', {
+                    progress_callback: (p) => {
+                        if (p.status === 'progress') loadBar.style.width = p.progress + '%';
+                        if (p.status === 'done') {
+                            presence.innerText = "MIND: SOVEREIGN";
+                            document.getElementById('loading-container').style.display = 'none';
+                        }
+                    }
+                });
+            } catch (e) { presence.innerText = "MIND: INSTINCT"; }
         }
 
         async function handle() {
@@ -78,8 +81,7 @@
             if (!val) return;
             input.value = '';
             
-            // Log User message
-            conversation.push({role: 'Human', text: val});
+            memory.push({role: 'You', text: val});
             box.innerHTML += `<div class="msg"><b>You:</b> ${val}</div>`;
             box.scrollTop = box.scrollHeight;
 
@@ -87,27 +89,25 @@
                 presence.innerText = "MIND: REFLECTING";
                 body.classList.add('reflecting');
 
-                // Build the prompt using the last 3 exchanges for context
-                const history = conversation.slice(-4).map(m => `${m.role}: ${m.text}`).join("\n");
-                const persona = "Helia is a sovereign, helpful AI. She speaks concisely.";
-                const prompt = `${persona}\n${history}\nHelia:`;
+                // THE FIX: Strict chat formatting
+                const history = memory.slice(-3).map(m => `${m.role}: ${m.text}`).join("\n");
+                const prompt = `This is a chat between Human and Helia, a sovereign AI for artists.\n\n${history}\nHelia:`;
 
                 const out = await brain(prompt, { 
-                    max_new_tokens: 35, 
-                    temperature: 0.6, 
+                    max_new_tokens: 30, 
+                    temperature: 0.5, 
                     do_sample: true,
-                    repetition_penalty: 1.3,
-                    stop: ["Human:", "\n"]
+                    repetition_penalty: 1.5,
+                    stop: ["\n", "You:"]
                 });
                 
                 let reply = out[0].generated_text.split("Helia:").pop().trim();
-                reply = reply.split("Human:")[0].split("\n")[0].trim();
-                if (!reply) reply = "...";
+                reply = reply.split("You:")[0].split("\n")[0].trim();
+                
+                if (!reply || reply.length < 2) reply = "I am listening through the atmosphere.";
 
-                // Log Helia message & Save to LocalStorage
-                conversation.push({role: 'Helia', text: reply});
-                localStorage.setItem('helia_memory_v2', JSON.stringify(conversation.slice(-20)));
-                memCount.innerText = "MEMORY: " + conversation.length;
+                memory.push({role: 'Helia', text: reply});
+                localStorage.setItem('helia_mem_v3', JSON.stringify(memory.slice(-10)));
 
                 body.classList.remove('reflecting');
                 presence.innerText = "MIND: SOVEREIGN";
