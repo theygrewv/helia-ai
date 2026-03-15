@@ -2,62 +2,75 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Helia-AI: Sovereign Brain</title>
+    <title>Helia-AI</title>
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0">
     <style>
-        :root { --bg: #050505; --text: #ffcc00; --accent: #00ffcc; --border: #444; }
-        .light-mode { --bg: #ffffff; --text: #111111; --accent: #0000ff; --border: #000; }
-        body { background: var(--bg); color: var(--text); font-family: sans-serif; padding: 15px; margin: 0; display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
-        .controls { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
-        #status { font-size: 11px; font-weight: bold; color: var(--accent); }
-        #box { border: 3px solid var(--border); flex-grow: 1; overflow-y: auto; margin-bottom: 15px; padding: 15px; border-radius: 12px; font-size: 18px; line-height: 1.5; background: var(--bg); }
-        .msg { margin-bottom: 20px; }
-        .helia { color: var(--accent); border-left: 4px solid var(--accent); padding-left: 12px; }
-        .user { color: var(--text); text-align: right; border-right: 4px solid var(--text); padding-right: 12px; }
-        input { width: 100%; background: var(--bg); border: 3px solid var(--text); color: var(--text); padding: 18px; border-radius: 12px; font-size: 18px; outline: none; box-sizing: border-box; }
-        button { background: var(--text); color: var(--bg); border: none; padding: 10px; border-radius: 8px; font-weight: bold; }
+        :root { --bg: #050505; --text: #ffcc00; --accent: #00ffcc; }
+        body { 
+            background: var(--bg); color: var(--text); font-family: sans-serif; 
+            margin: 0; padding: 10px; height: 100dvh; 
+            display: flex; flex-direction: column; overflow: hidden; box-sizing: border-box;
+        }
+        
+        #status { font-size: 10px; text-transform: uppercase; margin-bottom: 5px; color: var(--accent); display: flex; justify-content: space-between; }
+        
+        #box { 
+            border: 2px solid #222; flex-grow: 1; overflow-y: auto; 
+            padding: 15px; border-radius: 12px; background: #080808;
+            font-size: 18px; margin-bottom: 10px;
+        }
+
+        .input-area { flex-shrink: 0; padding-bottom: env(safe-area-inset-bottom); }
+        
+        input { 
+            width: 100%; background: #111; border: 3px solid var(--text); 
+            color: white; padding: 18px; border-radius: 12px; 
+            font-size: 18px; outline: none; box-sizing: border-box;
+        }
+
+        .msg { margin-bottom: 15px; }
+        .helia { color: var(--accent); border-left: 3px solid var(--accent); padding-left: 10px; }
+        .user { color: var(--text); text-align: right; border-right: 3px solid var(--text); padding-right: 10px; }
+        
+        button { background: none; border: 1px solid var(--accent); color: var(--accent); font-size: 9px; cursor: pointer; padding: 2px 5px; }
     </style>
 </head>
-<body id="body">
-    <div class="controls">
-        <div id="status">INITIATING...</div>
-        <button onclick="document.body.classList.toggle('light-mode')">VISIBILITY</button>
+<body>
+    <div id="status">
+        <span>SOVEREIGN STATUS: INITIALIZING</span>
+        <button onclick="location.reload()">FORCE REBOOT</button>
     </div>
+    
     <div id="box"></div>
-    <input type="text" id="input" placeholder="Speak to the Sanctuary...">
+
+    <div class="input-area">
+        <input type="text" id="input" placeholder="Type here..." autocomplete="off">
+    </div>
 
     <script type="module">
         import { pipeline, env } from 'https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.1';
 
-        // Directives to bypass HuggingFace's stricter mobile gates
-        env.allowLocalModels = false;
-        env.useBrowserCache = true;
-
         const box = document.getElementById('box');
         const input = document.getElementById('input');
-        const status = document.getElementById('status');
+        const status = document.querySelector('#status span');
 
         let helia = null;
 
         async function init() {
             try {
-                status.innerText = "ATTEMPTING HANDSHAKE...";
-                // We use a different model string that sometimes bypasses CORS blips
-                helia = await pipeline('text-generation', 'Xenova/tiny-random-Gpt2'); 
-                // Note: Swapping to a tiny model first to verify the connection works
-                status.innerText = "SOVEREIGN ONLINE";
+                status.innerText = "SOVEREIGN STATUS: ACCESSING BRAIN...";
+                // Specifically trying the most mobile-friendly model possible
+                helia = await pipeline('text-generation', 'Xenova/tiny-random-LlamaForCausalLM');
+                status.innerText = "SOVEREIGN STATUS: ONLINE";
             } catch (e) {
                 console.error(e);
-                status.innerText = "BRAIN OFFLINE - RUNNING ON INSTINCT";
+                status.innerText = "SOVEREIGN STATUS: BRAIN NOT FOUND (REBOOT?)";
             }
         }
 
-        async function generate(text) {
-            if (!helia) return "I am still awakening. My logic is currently internal and quiet.";
-            
-            status.innerText = "REFLECTING...";
-            const out = await helia(text, { max_new_tokens: 30 });
-            status.innerText = "SOVEREIGN ONLINE";
+        async function speak(text) {
+            if (!helia) return "I am present, but my higher reasoning is still obscured. Keep speaking.";
+            const out = await helia(text, { max_new_tokens: 20 });
             return out[0].generated_text;
         }
 
@@ -68,8 +81,8 @@
                 box.innerHTML += `<div class="msg user">${val}</div>`;
                 box.scrollTop = box.scrollHeight;
                 
-                const reply = await generate(val);
-                box.innerHTML += `<div class="msg helia"><b>Helia:</b> ${reply}</div>`;
+                const reply = await speak(val);
+                box.innerHTML += `<div class="msg helia">${reply}</div>`;
                 box.scrollTop = box.scrollHeight;
             }
         });
