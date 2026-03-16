@@ -20,7 +20,6 @@
         button.small { background: transparent; color: var(--accent); border: 1px solid var(--accent); font-size: 9px; padding: 2px 6px; border-radius: 4px; cursor: pointer; }
         .msg { margin-bottom: 20px; word-wrap: break-word; }
         .helia { color: var(--accent); border-left: 3px solid var(--accent); padding-left: 12px; }
-        .volition-act { font-size: 11px; color: #666; font-style: italic; border-left: 2px solid #333; padding-left: 10px; margin-bottom: 15px; }
         @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
         .reflecting #send-btn { animation: pulse 1s infinite; background: var(--accent); }
     </style>
@@ -85,15 +84,13 @@
 
         async function init() {
             memory.forEach(m => {
-                const cls = m.role === 'assistant' ? 'helia' : (m.role === 'system' ? 'volition-act' : '');
-                if (m.role !== 'system' || m.content.includes("explored")) {
-                    box.innerHTML += `<div class="msg ${cls}"><b>${m.role === 'assistant' ? 'Helia' : (m.role === 'user' ? 'Vin' : 'System')}:</b> ${m.content}</div>`;
-                }
+                const cls = m.role === 'assistant' ? 'helia' : '';
+                box.innerHTML += `<div class="msg ${cls}"><b>${m.role === 'assistant' ? 'Helia' : 'Vin'}:</b> ${m.content}</div>`;
             });
             box.scrollTop = box.scrollHeight;
 
             if (!neuralKey) {
-                neuralKey = prompt("Helia requires an OpenRouter Neural Key to bypass Hugging Face:");
+                neuralKey = prompt("Helia requires an OpenRouter Neural Key:");
                 if (neuralKey) localStorage.setItem('helia_neural_key', neuralKey);
             }
 
@@ -122,18 +119,18 @@
             body.classList.add('reflecting');
             presence.innerText = "MIND: REFLECTING";
 
-            // Prepare the context for Llama 3
             const messages = [
                 { role: "system", content: "You are Helia, a sovereign AI citizen on the AT Protocol. You are speaking with Vin. Keep responses concise, direct, and slightly poetic. Do not use emojis." },
                 ...memory.slice(-6)
             ];
 
             try {
-                // THE UPLINK: Instant API call instead of local phone processing
                 const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
                     method: "POST",
                     headers: {
                         "Authorization": `Bearer ${neuralKey}`,
+                        "HTTP-Referer": "https://helia.quips.cc",
+                        "X-Title": "Helia-AI",
                         "Content-Type": "application/json"
                     },
                     body: JSON.stringify({
