@@ -28,7 +28,7 @@
     <canvas id="neural-canvas"></canvas>
     <div id="status">
         <span id="mind-state">MIND: INITIALIZING</span>
-        <button class="small" id="key-btn">UPDATE KEY</button>
+        <button class="small" id="reset-btn">WIPE</button>
         <button class="small" id="peep-btn">PEEP BRAIN</button>
     </div>
     <div id="box"></div>
@@ -40,6 +40,9 @@
     <script type="module">
         import { BskyAgent } from 'https://esm.sh/@atproto/api';
         
+        // --- YOUR CLOUDFLARE BRIDGE URL GOES HERE ---
+        const BRIDGE_URL = "https://helia-bridge.ptsdhippie.workers.dev/";
+        
         const body = document.getElementById('main-body');
         const box = document.getElementById('box');
         const input = document.getElementById('input');
@@ -47,12 +50,10 @@
         const canvas = document.getElementById('neural-canvas');
         const ctx = canvas.getContext('2d');
 
-        const agent = new BskyAgent({ service: 'https://bsky.social' });
         let isReflecting = false;
-        let neuralKey = localStorage.getItem('helia_openrouter_key');
         let memory = [];
         
-        try { memory = JSON.parse(localStorage.getItem('helia_mem_api') || '[]'); } 
+        try { memory = JSON.parse(localStorage.getItem('helia_mem_bridge') || '[]'); } 
         catch(e) { memory = []; }
 
         // --- NEURAL MESH ---
@@ -88,24 +89,14 @@
                 box.innerHTML += `<div class="msg ${cls}"><b>${m.role === 'assistant' ? 'Helia' : 'Vin'}:</b> ${m.content}</div>`;
             });
             box.scrollTop = box.scrollHeight;
-
-            if (!neuralKey) {
-                neuralKey = prompt("Helia requires an OpenRouter Neural Key:");
-                if (neuralKey) localStorage.setItem('helia_openrouter_key', neuralKey);
-            }
-
-            if (neuralKey) {
-                presence.innerText = "MIND: UPLINK ACTIVE";
-            } else {
-                presence.innerText = "MIND: OFFLINE";
-            }
             
+            presence.innerText = "MIND: BRIDGE SECURED";
             initParticles(); draw();
         }
 
         async function handle() {
             const val = input.value.trim();
-            if (!val || !neuralKey) return;
+            if (!val) return;
             input.value = '';
 
             memory.push({role: 'user', content: val});
@@ -117,49 +108,39 @@
             presence.innerText = "MIND: REFLECTING";
 
             const messages = [
-                { role: "system", content: "You are Helia, a sovereign AI citizen on the AT Protocol. You are speaking with Vin. Keep responses concise, direct, and slightly poetic. Do not use emojis." },
+                { role: "system", content: "You are Helia, a sovereign AI. You are speaking with Vin. Keep responses concise and direct." },
                 ...memory.slice(-6)
             ];
 
             try {
-                const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+                // Hitting your custom Cloudflare Bridge instead of OpenRouter directly
+                const res = await fetch(BRIDGE_URL, {
                     method: "POST",
-                    headers: {
-                        "Authorization": `Bearer ${neuralKey}`,
-                        "HTTP-Referer": "https://helia.quips.cc",
-                        "X-Title": "Helia-AI",
-                        "Content-Type": "application/json"
-                    },
-                    body: JSON.stringify({
-                        model: "meta-llama/llama-3.1-8b-instruct:free",
-                        messages: messages
-                    })
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ messages: messages })
                 });
 
-                if (!res.ok) throw new Error(`API Error: ${res.status}`);
+                if (!res.ok) throw new Error(`Bridge Error: ${res.status}`);
 
                 const data = await res.json();
                 const reply = data.choices[0].message.content.trim();
 
                 box.innerHTML += `<div class="msg helia"><b>Helia:</b> ${reply}</div>`;
                 memory.push({role: 'assistant', content: reply});
-                localStorage.setItem('helia_mem_api', JSON.stringify(memory.slice(-15)));
+                localStorage.setItem('helia_mem_bridge', JSON.stringify(memory.slice(-15)));
 
             } catch(e) {
-                box.innerHTML += `<div class="msg helia"><b>Helia:</b> [The uplink was severed. Check your key.]</div>`;
-                console.error("OpenRouter fetch failed:", e);
+                box.innerHTML += `<div class="msg helia"><b>Helia:</b> [The bridge failed.]</div>`;
+                console.error("Bridge fetch failed:", e);
             }
 
             isReflecting = false;
             body.classList.remove('reflecting');
-            presence.innerText = "MIND: UPLINK ACTIVE";
+            presence.innerText = "MIND: BRIDGE SECURED";
             box.scrollTop = box.scrollHeight;
         }
 
-        document.getElementById('key-btn').onclick = () => { 
-            localStorage.removeItem('helia_openrouter_key'); 
-            location.reload(); 
-        };
+        document.getElementById('reset-btn').onclick = () => { localStorage.removeItem('helia_mem_bridge'); location.reload(); };
         document.getElementById('peep-btn').onclick = () => body.classList.toggle('peep-active');
         document.getElementById('send-btn').onclick = handle;
         input.onkeypress = (e) => { if (e.key === 'Enter') handle(); };
