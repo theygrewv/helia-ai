@@ -2,17 +2,20 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Helia</title>
+    <title>Helia: Game Architect</title>
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0, viewport-fit=cover">
     <style>
         :root { --bg: #0a0a0c; --text: #e0e0e0; --accent: #ffcc00; }
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { background: var(--bg); color: var(--text); font-family: 'Courier New', monospace; height: 100dvh; display: grid; grid-template-rows: auto auto 1fr 70px; overflow: hidden; padding: 15px; padding-top: calc(15px + env(safe-area-inset-top)); }
+        
         canvas { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: -1; opacity: 0.1; pointer-events: none; }
-        #art-canvas { opacity: 0; z-index: -1; transition: opacity 1s; pointer-events: auto; }
-        body.peep-void #art-canvas { opacity: 1; z-index: 10; }
+        #art-canvas { opacity: 0.2; z-index: 1; transition: opacity 0.5s; pointer-events: auto; }
+        body.game-active #art-canvas { opacity: 1; }
+        body.game-active #box { opacity: 0.1; pointer-events: none; }
+        
         #status-bar { font-size: 10px; border-bottom: 1px solid var(--accent); display: flex; justify-content: space-between; padding-bottom: 5px; align-items: center; z-index: 20; text-transform: uppercase; }
-        #box { overflow-y: auto; padding: 10px 0; font-size: 18px; line-height: 1.5; z-index: 5; scroll-behavior: smooth; }
+        #box { overflow-y: auto; padding: 10px 0; font-size: 18px; line-height: 1.5; z-index: 5; scroll-behavior: smooth; transition: opacity 0.5s; }
         .input-area { display: flex; gap: 10px; padding: 10px 0; background: transparent; border-top: 1px solid #222; align-items: center; z-index: 20; }
         input { flex: 1; min-width: 0; height: 50px; background: rgba(15,15,20,0.9); border: 1px solid var(--accent); color: #fff; padding: 0 15px; border-radius: 4px; font-size: 16px; outline: none; }
         #send-btn { width: 70px; height: 50px; background: var(--accent); color: #000; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; }
@@ -24,16 +27,18 @@
 <body id="main-body">
     <canvas id="neural-canvas"></canvas>
     <canvas id="art-canvas"></canvas>
+    
     <div id="status-bar">
         <div><span id="mind-state">STABLE</span></div>
         <div style="display:flex; gap:5px;">
+            <button class="small" id="toggle-game-btn">GAME VIEW</button>
             <button class="small" id="peep-core-btn">CORE</button>
-            <button class="small" id="peep-void-btn">VOID</button>
         </div>
     </div>
+    
     <div id="box"></div>
     <div class="input-area">
-        <input type="text" id="input" placeholder="..." autocomplete="off">
+        <input type="text" id="input" placeholder="Type or click canvas..." autocomplete="off">
         <button id="send-btn">SEND</button>
     </div>
 
@@ -44,22 +49,21 @@
         const input = document.getElementById('input');
         const artCanvas = document.getElementById('art-canvas');
         const artCtx = artCanvas.getContext('2d');
+        const body = document.body;
 
         let memory = [];
+        let gameState = {}; 
 
-        // --- THE SPATIAL ENGINE ---
         const tools = {
             clear: () => artCtx.clearRect(0,0,artCanvas.width,artCanvas.height),
             grid: (rows, cols, color) => {
                 artCtx.strokeStyle = color;
-                const w = artCanvas.width / cols;
-                const h = artCanvas.height / rows;
+                const w = artCanvas.width / cols, h = artCanvas.height / rows;
                 for(let i=0; i<=cols; i++) { artCtx.beginPath(); artCtx.moveTo(i*w, 0); artCtx.lineTo(i*w, artCanvas.height); artCtx.stroke(); }
                 for(let i=0; i<=rows; i++) { artCtx.beginPath(); artCtx.moveTo(0, i*h); artCtx.lineTo(artCanvas.width, i*h); artCtx.stroke(); }
             },
             cell: (r, c, rows, cols, color) => {
-                const w = artCanvas.width / cols;
-                const h = artCanvas.height / rows;
+                const w = artCanvas.width / cols, h = artCanvas.height / rows;
                 artCtx.fillStyle = color;
                 artCtx.fillRect(c*w, r*h, w, h);
             },
@@ -77,22 +81,32 @@
                 const res = await fetch(BRIDGE_URL);
                 const data = await res.json();
                 memory = typeof data.history === 'string' ? JSON.parse(data.history) : (data.history || []);
-                box.innerHTML = '';
-                memory.forEach(m => {
-                    if (m.role === 'system') return;
-                    const content = m.content.replace(/\[.*?\]/g, '').trim();
-                    if (content) box.innerHTML += `<div class="msg ${m.role==='assistant'?'helia':''}"><b>${m.role==='assistant'?'Helia':'Vin'}:</b> ${content}</div>`;
-                });
-                box.scrollTop = box.scrollHeight;
+                renderHistory();
             } catch(e) {}
             initOrb();
         }
 
+        function renderHistory() {
+            box.innerHTML = '';
+            memory.forEach(m => {
+                if (m.role === 'system') return;
+                const content = m.content.replace(/\[.*?\]/g, '').trim();
+                if (content) box.innerHTML += `<div class="msg ${m.role==='assistant'?'helia':''}"><b>${m.role==='assistant'?'Helia':'Vin'}:</b> ${content}</div>`;
+            });
+            box.scrollTop = box.scrollHeight;
+        }
+
+        // --- INTERACTIVE INPUT BRIDGE ---
+        artCanvas.addEventListener('mousedown', (e) => {
+            const x = Math.round(e.clientX), y = Math.round(e.clientY);
+            input.value = `[CLICK: ${x}, ${y}]`;
+            handle(); // Auto-send click coordinates to Helia
+        });
+
         function processTags(text) {
             const pm = text.match(/\[PAINT:\s*([\s\S]*?)\]/i);
             if (pm) {
-                if (!document.body.classList.contains('peep-void')) document.body.classList.add('peep-void');
-                new Function('tools', 'ctx', 'w', 'h', pm[1])(tools, artCtx, artCanvas.width, artCanvas.height);
+                new Function('tools', 'ctx', 'w', 'h', 'state', pm[1])(tools, artCtx, artCanvas.width, artCanvas.height, gameState);
             }
         }
 
@@ -100,9 +114,9 @@
             const val = input.value.trim();
             if (!val) return;
             input.value = '';
-            box.innerHTML += `<div class="msg"><b>Vin:</b> ${val}</div>`;
+            if (!val.startsWith('[CLICK')) box.innerHTML += `<div class="msg"><b>Vin:</b> ${val}</div>`;
             box.scrollTop = box.scrollHeight;
-            document.body.classList.add('reflecting');
+            body.classList.add('reflecting');
 
             try {
                 const res = await fetch(BRIDGE_URL, {
@@ -118,9 +132,10 @@
                 memory.push({role: "user", content: val}, {role: "assistant", content: reply});
                 box.scrollTop = box.scrollHeight;
             } catch(e) {}
-            document.body.classList.remove('reflecting');
+            body.classList.remove('reflecting');
         }
 
+        // --- THREE.JS ORB ---
         let orb, scene, camera, renderer;
         function initOrb() {
             scene = new THREE.Scene();
@@ -134,8 +149,7 @@
         }
         function render() { requestAnimationFrame(render); if(orb) orb.rotation.y += 0.002; renderer.render(scene, camera); }
 
-        document.getElementById('peep-core-btn').onclick = () => document.body.classList.toggle('peep-core');
-        document.getElementById('peep-void-btn').onclick = () => document.body.classList.toggle('peep-void');
+        document.getElementById('toggle-game-btn').onclick = () => body.classList.toggle('game-active');
         document.getElementById('send-btn').onclick = handle;
         input.onkeypress = (e) => { if (e.key === 'Enter') handle(); };
         init();
