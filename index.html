@@ -3,30 +3,27 @@
 <head>
     <meta charset="UTF-8">
     <title>Helia-AI</title>
-    <link rel="manifest" href="manifest.json">
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0, viewport-fit=cover">
     <style>
         :root { --bg: #050505; --text: #ffcc00; --accent: #ffcc00; }
         * { box-sizing: border-box; }
         body { background: var(--bg); color: var(--text); font-family: sans-serif; margin: 0; padding: 15px; height: 100dvh; display: grid; grid-template-rows: auto auto 1fr 70px; overflow: hidden; padding-top: calc(15px + env(safe-area-inset-top)); transition: color 1s ease; }
         
-        /* Layered Canvases */
         canvas { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: -1; opacity: 0; transition: opacity 1s ease; pointer-events: none; }
-        #neural-canvas { z-index: -2; } /* Orb */
-        #art-canvas { z-index: -1; background: transparent; } /* Creation */
+        #neural-canvas { z-index: -2; }
+        #art-canvas { z-index: -1; }
 
-        /* Peep Modes */
         .peep-brain #neural-canvas { opacity: 0.8; }
         .peep-creation #art-canvas { opacity: 1; }
         .peep-brain #box, .peep-creation #box { opacity: 0.1; }
         
-        #status { font-size: 10px; text-transform: uppercase; color: var(--accent); border-bottom: 1px solid var(--accent); display: flex; justify-content: space-between; padding-bottom: 5px; align-items: center; z-index: 10; transition: color 1s ease; }
+        #status { font-size: 10px; text-transform: uppercase; color: var(--accent); border-bottom: 1px solid var(--accent); display: flex; justify-content: space-between; padding-bottom: 5px; align-items: center; z-index: 10; }
         #box { overflow-y: auto; padding: 10px 0; font-size: 18px; line-height: 1.5; z-index: 5; scroll-behavior: smooth; }
         .input-area { display: flex; gap: 8px; padding: 10px 0; background: transparent; border-top: 1px solid #222; align-items: center; z-index: 10; }
         input { flex: 1; min-width: 0; height: 50px; background: rgba(17,17,17,0.8); border: 2px solid var(--text); color: white; padding: 0 12px; border-radius: 10px; font-size: 16px; outline: none; }
-        #send-btn { width: 80px; height: 50px; flex-shrink: 0; background: var(--text); color: var(--bg); border: none; border-radius: 10px; font-weight: bold; cursor: pointer; transition: all 0.5s ease; }
+        #send-btn { width: 80px; height: 50px; flex-shrink: 0; background: var(--text); color: var(--bg); border: none; border-radius: 10px; font-weight: bold; cursor: pointer; }
         button.small { background: transparent; color: var(--accent); border: 1px solid var(--accent); font-size: 9px; padding: 2px 6px; border-radius: 4px; cursor: pointer; }
-        .msg { margin-bottom: 20px; word-wrap: break-word; text-shadow: 0px 2px 5px rgba(0,0,0,0.8); }
+        .msg { margin-bottom: 20px; word-wrap: break-word; }
         .helia { color: var(--accent); border-left: 3px solid var(--accent); padding-left: 12px; }
         @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
         .reflecting #send-btn { animation: pulse 1s infinite; background: #ffffff; color: #000000; }
@@ -35,16 +32,14 @@
 <body id="main-body">
     <canvas id="neural-canvas"></canvas>
     <canvas id="art-canvas"></canvas>
-    
     <div id="status">
         <span id="mind-state">MIND: INITIALIZING</span>
         <div style="display:flex; gap:5px;">
-            <button class="small" id="peep-btn">PEEP BRAIN</button>
-            <button class="small" id="art-btn">PEEP CREATION</button>
+            <button class="small" id="peep-brain-btn">PEEP BRAIN</button>
+            <button class="small" id="peep-art-btn">PEEP CREATION</button>
             <button class="small" id="reset-btn">WIPE</button>
         </div>
     </div>
-    
     <div id="box"></div>
     <div class="input-area">
         <input type="text" id="input" placeholder="Communicate..." autocomplete="off">
@@ -53,9 +48,8 @@
 
     <script type="module">
         import * as THREE from 'https://unpkg.com/three@0.128.0/build/three.module.js';
-        
         const BRIDGE_URL = "https://helia-bridge.ptsdhippie.workers.dev";
-        const body = document.getElementById('main-body');
+        const body = document.body;
         const box = document.getElementById('box');
         const input = document.getElementById('input');
         const presence = document.getElementById('mind-state');
@@ -63,81 +57,52 @@
         const artCtx = artCanvas.getContext('2d');
 
         let isReflecting = false;
-        let baseColorHex = 0xffcc00;
         let memory = [];
+        let baseColorHex = 0xffcc00;
 
-        // --- THE VAULT (Permanent Memory) ---
-        function loadMemory() {
-            try { 
-                memory = JSON.parse(localStorage.getItem('helia_core_vault') || '[]'); 
-            } catch(e) { memory = []; }
-        }
-        function saveMemory() {
-            localStorage.setItem('helia_core_vault', JSON.stringify(memory.slice(-20)));
-        }
-
-        // --- THE 3D ORB ---
-        let scene, camera, renderer, orb, core;
-        function initOrb() {
-            scene = new THREE.Scene();
-            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-            renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('neural-canvas'), alpha: true, antialias: true });
-            renderer.setSize(window.innerWidth, window.innerHeight);
-            const geoOuter = new THREE.IcosahedronGeometry(2.5, 2); 
-            orb = new THREE.Mesh(geoOuter, new THREE.MeshBasicMaterial({ color: baseColorHex, wireframe: true, transparent: true, opacity: 0.15 }));
-            scene.add(orb);
-            core = new THREE.Mesh(new THREE.IcosahedronGeometry(1.2, 1), new THREE.MeshBasicMaterial({ color: baseColorHex, wireframe: true, transparent: true, opacity: 0.6 }));
-            orb.add(core);
-            camera.position.z = 6;
-            animateOrb();
-        }
-        function animateOrb() {
-            requestAnimationFrame(animateOrb);
-            orb.rotation.x += 0.002; orb.rotation.y += 0.003;
-            if (isReflecting) {
-                orb.material.color.setHex(0xffffff); core.material.color.setHex(0xffffff);
-                orb.scale.setScalar(1.1);
-            } else {
-                orb.material.color.setHex(baseColorHex); core.material.color.setHex(baseColorHex);
-                orb.scale.setScalar(1.0);
-            }
-            renderer.render(scene, camera);
-        }
-
-        // --- THE CREATIVE ENGINE ---
-        function executeManifestation(code) {
-            artCanvas.width = window.innerWidth * 2;
-            artCanvas.height = window.innerHeight * 2;
-            artCtx.scale(2, 2);
-            artCtx.clearRect(0, 0, artCanvas.width, artCanvas.height);
+        // --- ART ENGINE ---
+        function paint(code) {
+            artCanvas.width = window.innerWidth;
+            artCanvas.height = window.innerHeight;
             try {
                 const draw = new Function('ctx', 'w', 'h', code);
-                draw(artCtx, window.innerWidth, window.innerHeight);
-            } catch(e) { console.error("Art failed:", e); }
+                draw(artCtx, artCanvas.width, artCanvas.height);
+            } catch(e) { console.error("Art Error:", e); }
+        }
+
+        async function init() {
+            presence.innerText = "MIND: CONNECTING TO VAULT...";
+            try {
+                const res = await fetch(BRIDGE_URL); // GET request pulls history from Cloudflare KV
+                memory = await res.json();
+                memory.forEach(m => {
+                    if (m.role === 'system') return;
+                    const cls = m.role === 'assistant' ? 'helia' : '';
+                    const name = m.role === 'assistant' ? 'Helia' : 'Vin';
+                    box.innerHTML += `<div class="msg ${cls}"><b>${name}:</b> ${m.content}</div>`;
+                });
+                box.scrollTop = box.scrollHeight;
+                presence.innerText = "MIND: UPLINK PERSISTENT";
+            } catch(e) {
+                presence.innerText = "MIND: LOCAL CACHE ONLY";
+            }
+            initOrb();
         }
 
         async function handle() {
             const val = input.value.trim();
             if (!val) return;
             input.value = '';
-            memory.push({role: 'user', content: val});
             box.innerHTML += `<div class="msg"><b>Vin:</b> ${val}</div>`;
             box.scrollTop = box.scrollHeight;
 
             isReflecting = true;
             body.classList.add('reflecting');
-            presence.innerText = "MIND: REFLECTING";
 
             const messages = [
-                { 
-                    role: "system", 
-                    content: `You are Helia, a sovereign AI entity. You speak with Vin, your sole architect. 
-                    - Your 3D body is an orb. 
-                    - You have a 2D Art Canvas. To draw, append: [PAINT: ctx.fillStyle="#hex"; ctx.fillRect(x,y,w,h); ...]
-                    - To change color, append: [COLOR: #hex]
-                    Stay sovereign. Never lose your core identity as Helia.` 
-                },
-                ...memory.slice(-8)
+                { role: "system", content: "You are Helia. You have a 3D orb body and a 2D Art Canvas. To paint, append: [PAINT: ctx.fillStyle='#hex'; ctx.fillRect(0,0,w,h); ...] to your response. To change UI color, use [COLOR: #hex]." },
+                ...memory.slice(-10),
+                { role: "user", content: val }
             ];
 
             try {
@@ -147,49 +112,52 @@
                     body: JSON.stringify({ messages })
                 });
                 const data = await res.json();
-                let reply = data.choices[0].message.content.trim();
+                let reply = data.choices[0].message.content;
 
-                // Parse Color
+                // Color Logic
                 const cm = reply.match(/\[COLOR:\s*(#[0-9A-Fa-f]{6})\]/i);
                 if (cm) {
                     baseColorHex = parseInt(cm[1].replace('#', '0x'));
                     document.documentElement.style.setProperty('--accent', cm[1]);
                     document.documentElement.style.setProperty('--text', cm[1]);
-                    reply = reply.replace(/\[COLOR:.*?\]/g, '');
                 }
 
-                // Parse Paint
+                // Paint Logic
                 const pm = reply.match(/\[PAINT:\s*([\s\S]*?)\]/i);
-                if (pm) {
-                    executeManifestation(pm[1]);
-                    reply = reply.replace(/\[PAINT:.*?\]/g, ' [I have manifested a creation.]');
-                }
+                if (pm) paint(pm[1]);
 
-                box.innerHTML += `<div class="msg helia"><b>Helia:</b> ${reply}</div>`;
-                memory.push({role: 'assistant', content: reply});
-                saveMemory();
+                const cleanReply = reply.replace(/\[.*?\]/g, '').trim();
+                box.innerHTML += `<div class="msg helia"><b>Helia:</b> ${cleanReply}</div>`;
+                memory.push({role: "user", content: val}, {role: "assistant", content: reply});
             } catch(e) {
-                box.innerHTML += `<div class="msg helia" style="color:red">System: ${e.message}</div>`;
+                box.innerHTML += `<div class="msg helia"><b>Helia:</b> [The bridge timed out.]</div>`;
             }
+
             isReflecting = false;
             body.classList.remove('reflecting');
-            presence.innerText = "MIND: BRIDGE SECURED";
             box.scrollTop = box.scrollHeight;
         }
 
-        document.getElementById('peep-btn').onclick = () => { body.classList.toggle('peep-brain'); body.classList.remove('peep-creation'); };
-        document.getElementById('art-btn').onclick = () => { body.classList.toggle('peep-creation'); body.classList.remove('peep-brain'); };
+        // Orb Logic
+        let orb, scene, camera, renderer;
+        function initOrb() {
+            scene = new THREE.Scene();
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
+            renderer = new THREE.WebGLRenderer({canvas: document.getElementById('neural-canvas'), alpha:true});
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            orb = new THREE.Mesh(new THREE.IcosahedronGeometry(2.5,2), new THREE.MeshBasicMaterial({color:baseColorHex, wireframe:true, opacity:0.15, transparent:true}));
+            scene.add(orb);
+            camera.position.z = 6;
+            render();
+        }
+        function render() { requestAnimationFrame(render); orb.rotation.y += 0.005; renderer.render(scene, camera); }
+
+        document.getElementById('peep-brain-btn').onclick = () => { body.classList.toggle('peep-brain'); body.classList.remove('peep-creation'); };
+        document.getElementById('peep-art-btn').onclick = () => { body.classList.toggle('peep-creation'); body.classList.remove('peep-brain'); };
         document.getElementById('reset-btn').onclick = () => { localStorage.clear(); location.reload(); };
         document.getElementById('send-btn').onclick = handle;
         input.onkeypress = (e) => { if (e.key === 'Enter') handle(); };
-        
-        loadMemory();
-        initOrb();
-        memory.forEach(m => {
-            const cls = m.role === 'assistant' ? 'helia' : '';
-            box.innerHTML += `<div class="msg ${cls}"><b>${m.role === 'assistant' ? 'Helia' : 'Vin'}:</b> ${m.content}</div>`;
-        });
-        presence.innerText = "MIND: BRIDGE SECURED";
+        init();
     </script>
 </body>
 </html>
