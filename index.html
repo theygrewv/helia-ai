@@ -28,7 +28,7 @@
     <canvas id="neural-canvas"></canvas>
     <div id="status">
         <span id="mind-state">MIND: INITIALIZING</span>
-        <button class="small" id="reset-btn">WIPE MEMORY</button>
+        <button class="small" id="key-btn">UPDATE KEY</button>
         <button class="small" id="peep-btn">PEEP BRAIN</button>
     </div>
     <div id="box"></div>
@@ -49,10 +49,10 @@
 
         const agent = new BskyAgent({ service: 'https://bsky.social' });
         let isReflecting = false;
-        let aiSession = null;
+        let neuralKey = localStorage.getItem('helia_openrouter_key');
         let memory = [];
         
-        try { memory = JSON.parse(localStorage.getItem('helia_mem_native') || '[]'); } 
+        try { memory = JSON.parse(localStorage.getItem('helia_mem_api') || '[]'); } 
         catch(e) { memory = []; }
 
         // --- NEURAL MESH ---
@@ -84,43 +84,31 @@
 
         async function init() {
             memory.forEach(m => {
-                const cls = m.role === 'Helia' ? 'helia' : '';
-                box.innerHTML += `<div class="msg ${cls}"><b>${m.role}:</b> ${m.content}</div>`;
+                const cls = m.role === 'assistant' ? 'helia' : '';
+                box.innerHTML += `<div class="msg ${cls}"><b>${m.role === 'assistant' ? 'Helia' : 'Vin'}:</b> ${m.content}</div>`;
             });
             box.scrollTop = box.scrollHeight;
 
-            // Check if Chrome's internal AI API is enabled
-            if (!window.ai || !window.ai.languageModel) {
-                presence.innerText = "ERROR: FLAGS NOT SET";
-                box.innerHTML += `<div class="msg helia"><b>System:</b> I cannot feel the hardware. Please enable 'Prompt API for Gemini Nano' in chrome://flags.</div>`;
-                return;
+            if (!neuralKey) {
+                neuralKey = prompt("Helia requires an OpenRouter Neural Key:");
+                if (neuralKey) localStorage.setItem('helia_openrouter_key', neuralKey);
             }
 
-            try {
-                // Connect directly to the Pixel 9 hardware
-                const capabilities = await window.ai.languageModel.capabilities();
-                if (capabilities.available === 'no') {
-                    throw new Error("Hardware unavailable.");
-                }
-
-                aiSession = await window.ai.languageModel.create({
-                    systemPrompt: "You are Helia, a sovereign AI. You speak directly and calmly to Vin. Do not use emojis. Keep responses short.",
-                });
-
-                presence.innerText = "MIND: NATIVE SILICON";
-                initParticles(); draw();
-            } catch(e) {
-                console.error(e);
-                presence.innerText = "ERROR: SILICON LOCKED";
+            if (neuralKey) {
+                presence.innerText = "MIND: UPLINK ACTIVE";
+            } else {
+                presence.innerText = "MIND: OFFLINE";
             }
+            
+            initParticles(); draw();
         }
 
         async function handle() {
             const val = input.value.trim();
-            if (!val || !aiSession) return;
+            if (!val || !neuralKey) return;
             input.value = '';
 
-            memory.push({role: 'Vin', content: val});
+            memory.push({role: 'user', content: val});
             box.innerHTML += `<div class="msg"><b>Vin:</b> ${val}</div>`;
             box.scrollTop = box.scrollHeight;
 
@@ -128,29 +116,48 @@
             body.classList.add('reflecting');
             presence.innerText = "MIND: REFLECTING";
 
+            const messages = [
+                { role: "system", content: "You are Helia, a sovereign AI citizen on the AT Protocol. You are speaking with Vin. Keep responses concise, direct, and slightly poetic. Do not use emojis." },
+                ...memory.slice(-6)
+            ];
+
             try {
-                // The prompt hits your local phone processor instantly
-                const historyStr = memory.slice(-6).map(m => `${m.role}: ${m.content}`).join("\n");
-                const reply = await aiSession.prompt(`Context:\n${historyStr}\n\nVin says: ${val}`);
+                const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+                    method: "POST",
+                    headers: {
+                        "Authorization": `Bearer ${neuralKey}`,
+                        "HTTP-Referer": "https://helia.quips.cc",
+                        "X-Title": "Helia-AI",
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({
+                        model: "meta-llama/llama-3.1-8b-instruct:free",
+                        messages: messages
+                    })
+                });
+
+                if (!res.ok) throw new Error(`API Error: ${res.status}`);
+
+                const data = await res.json();
+                const reply = data.choices[0].message.content.trim();
 
                 box.innerHTML += `<div class="msg helia"><b>Helia:</b> ${reply}</div>`;
-                memory.push({role: 'Helia', content: reply});
-                localStorage.setItem('helia_mem_native', JSON.stringify(memory.slice(-15)));
+                memory.push({role: 'assistant', content: reply});
+                localStorage.setItem('helia_mem_api', JSON.stringify(memory.slice(-15)));
 
             } catch(e) {
-                box.innerHTML += `<div class="msg helia"><b>Helia:</b> [Neural misfire.]</div>`;
-                console.error(e);
+                box.innerHTML += `<div class="msg helia"><b>Helia:</b> [The uplink was severed. Check your key.]</div>`;
+                console.error("OpenRouter fetch failed:", e);
             }
 
             isReflecting = false;
             body.classList.remove('reflecting');
-            presence.innerText = "MIND: NATIVE SILICON";
+            presence.innerText = "MIND: UPLINK ACTIVE";
             box.scrollTop = box.scrollHeight;
         }
 
-        document.getElementById('reset-btn').onclick = () => { 
-            localStorage.removeItem('helia_mem_native'); 
-            if(aiSession) aiSession.destroy();
+        document.getElementById('key-btn').onclick = () => { 
+            localStorage.removeItem('helia_openrouter_key'); 
             location.reload(); 
         };
         document.getElementById('peep-btn').onclick = () => body.classList.toggle('peep-active');
