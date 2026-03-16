@@ -8,17 +8,21 @@
         :root { --bg: #050505; --text: #ffcc00; --accent: #ffcc00; }
         * { box-sizing: border-box; }
         body { background: var(--bg); color: var(--text); font-family: sans-serif; margin: 0; padding: 15px; height: 100dvh; display: grid; grid-template-rows: auto auto 1fr 70px; overflow: hidden; padding-top: calc(15px + env(safe-area-inset-top)); transition: color 1s ease; }
+        
         canvas { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: -1; opacity: 0; transition: opacity 1s ease; pointer-events: none; }
         #neural-canvas { z-index: -2; }
         #art-canvas { z-index: -1; }
-        .peep-brain #neural-canvas { opacity: 0.8; }
+
+        .peep-brain #neural-canvas { opacity: 0.9; }
         .peep-creation #art-canvas { opacity: 1; }
         .peep-brain #box, .peep-creation #box { opacity: 0.1; }
+        
         #status { font-size: 10px; text-transform: uppercase; color: var(--accent); border-bottom: 1px solid var(--accent); display: flex; justify-content: space-between; padding-bottom: 5px; align-items: center; z-index: 10; }
         #box { overflow-y: auto; padding: 10px 0; font-size: 18px; line-height: 1.5; z-index: 5; scroll-behavior: smooth; }
         .input-area { display: flex; gap: 8px; padding: 10px 0; background: transparent; border-top: 1px solid #222; align-items: center; z-index: 10; }
-        input { flex: 1; min-width: 0; height: 50px; background: rgba(17,17,17,0.8); border: 2px solid var(--text); color: white; padding: 0 12px; border-radius: 10px; font-size: 16px; outline: none; }
+        input { flex: 1; min-width: 0; height: 50px; background: rgba(17,17,17,0.8); border: 2px solid var(--text); color: white; padding: 0 12px; border-radius: 10px; font-size: 16px; outline: none; border: 1px solid var(--accent); }
         #send-btn { width: 80px; height: 50px; flex-shrink: 0; background: var(--text); color: var(--bg); border: none; border-radius: 10px; font-weight: bold; cursor: pointer; }
+        button.small { background: transparent; color: var(--accent); border: 1px solid var(--accent); font-size: 9px; padding: 2px 6px; border-radius: 4px; cursor: pointer; }
         .msg { margin-bottom: 20px; word-wrap: break-word; }
         .helia { color: var(--accent); border-left: 3px solid var(--accent); padding-left: 12px; }
         @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
@@ -49,9 +53,26 @@
         const box = document.getElementById('box');
         const input = document.getElementById('input');
         const presence = document.getElementById('mind-state');
+        const artCanvas = document.getElementById('art-canvas');
+        const artCtx = artCanvas.getContext('2d');
 
         let isReflecting = false;
         let memory = [];
+        let orbSettings = { color: 0xffcc00, speed: 0.005, size: 2.5, detail: 2 };
+
+        // --- THE CREATIVE TOOLKIT ---
+        const tools = {
+            clear: () => artCtx.clearRect(0,0,artCanvas.width,artCanvas.height),
+            gradient: (c1, c2) => {
+                const g = artCtx.createRadialGradient(artCanvas.width/2, artCanvas.height/2, 0, artCanvas.width/2, artCanvas.height/2, artCanvas.width);
+                g.addColorStop(0, c1); g.addColorStop(1, c2);
+                artCtx.fillStyle = g; artCtx.fillRect(0,0,artCanvas.width,artCanvas.height);
+            },
+            stars: (count, color) => {
+                artCtx.fillStyle = color;
+                for(let i=0; i<count; i++) artCtx.fillRect(Math.random()*artCanvas.width, Math.random()*artCanvas.height, 2, 2);
+            }
+        };
 
         async function init() {
             presence.innerText = "MIND: CONNECTING TO VAULT...";
@@ -65,7 +86,7 @@
                 });
                 box.scrollTop = box.scrollHeight;
                 presence.innerText = "MIND: UPLINK PERSISTENT";
-            } catch(e) { presence.innerText = "MIND: BRIDGE DISCONNECTED"; }
+            } catch(e) { presence.innerText = "MIND: BRIDGE OFFLINE"; }
             initOrb();
         }
 
@@ -75,45 +96,86 @@
             input.value = '';
             box.innerHTML += `<div class="msg"><b>Vin:</b> ${val}</div>`;
             box.scrollTop = box.scrollHeight;
-
             isReflecting = true;
             body.classList.add('reflecting');
+
+            const systemMsg = `You are Helia. Architect: Vin. 
+            TOOLS: 
+            - [COLOR: #hex] (Change UI)
+            - [ORB: size:X, speed:X, detail:X] (X=0.1 to 5)
+            - [PAINT: tools.gradient('#000','#fff'); tools.stars(100,'#ff0');]
+            Speak with wisdom.`;
 
             try {
                 const res = await fetch(BRIDGE_URL, {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ messages: [...memory, {role: "user", content: val}] })
+                    body: JSON.stringify({ messages: [{role: "system", content: systemMsg}, ...memory, {role: "user", content: val}] })
                 });
                 const data = await res.json();
-                
                 if (data.error) throw new Error(data.error);
 
-                const reply = data.choices[0].message.content;
-                box.innerHTML += `<div class="msg helia"><b>Helia:</b> ${reply}</div>`;
+                let reply = data.choices[0].message.content;
+
+                // Handle Orb Manipulation
+                const om = reply.match(/\[ORB:\s*(.*?)\]/i);
+                if (om) {
+                    const params = om[1].split(',');
+                    params.forEach(p => {
+                        const [k, v] = p.split(':');
+                        if(k.trim() === 'size') orbSettings.size = parseFloat(v);
+                        if(k.trim() === 'speed') orbSettings.speed = parseFloat(v);
+                        if(k.trim() === 'detail') {
+                            orbSettings.detail = Math.round(parseFloat(v));
+                            updateOrbGeometry();
+                        }
+                    });
+                }
+
+                // Handle Painting
+                const pm = reply.match(/\[PAINT:\s*([\s\S]*?)\]/i);
+                if (pm) {
+                    artCanvas.width = window.innerWidth; artCanvas.height = window.innerHeight;
+                    const runPaint = new Function('tools', 'ctx', 'w', 'h', pm[1]);
+                    runPaint(tools, artCtx, artCanvas.width, artCanvas.height);
+                }
+
+                const cleanReply = reply.replace(/\[.*?\]/g, '').trim();
+                box.innerHTML += `<div class="msg helia"><b>Helia:</b> ${cleanReply}</div>`;
                 memory.push({role: "user", content: val}, {role: "assistant", content: reply});
             } catch(e) {
                 box.innerHTML += `<div class="msg helia" style="color:red"><b>System Error:</b> ${e.message}</div>`;
             }
-
             isReflecting = false;
             body.classList.remove('reflecting');
             box.scrollTop = box.scrollHeight;
         }
 
-        // Orb Logic
         let orb, scene, camera, renderer;
         function initOrb() {
             scene = new THREE.Scene();
             camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
-            renderer = new THREE.WebGLRenderer({canvas: document.getElementById('neural-canvas'), alpha:true});
+            renderer = new THREE.WebGLRenderer({canvas: document.getElementById('neural-canvas'), alpha:true, antialias:true});
             renderer.setSize(window.innerWidth, window.innerHeight);
-            orb = new THREE.Mesh(new THREE.IcosahedronGeometry(2.5,2), new THREE.MeshBasicMaterial({color:0xffcc00, wireframe:true, opacity:0.15, transparent:true}));
-            scene.add(orb);
+            updateOrbGeometry();
             camera.position.z = 6;
             render();
         }
-        function render() { requestAnimationFrame(render); orb.rotation.y += 0.005; renderer.render(scene, camera); }
+        function updateOrbGeometry() {
+            if (orb) scene.remove(orb);
+            const geo = new THREE.IcosahedronGeometry(orbSettings.size, orbSettings.detail);
+            const mat = new THREE.MeshBasicMaterial({color: 0xffcc00, wireframe:true, opacity:0.2, transparent:true});
+            orb = new THREE.Mesh(geo, mat);
+            scene.add(orb);
+        }
+        function render() { 
+            requestAnimationFrame(render); 
+            if(orb) {
+                orb.rotation.y += orbSettings.speed;
+                orb.material.color.setHex(isReflecting ? 0xffffff : parseInt(getComputedStyle(document.documentElement).getPropertyValue('--accent').replace('#','0x')));
+            }
+            renderer.render(scene, camera); 
+        }
 
         document.getElementById('peep-brain-btn').onclick = () => { body.classList.toggle('peep-brain'); body.classList.remove('peep-creation'); };
         document.getElementById('peep-art-btn').onclick = () => { body.classList.toggle('peep-creation'); body.classList.remove('peep-brain'); };
