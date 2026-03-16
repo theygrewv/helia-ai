@@ -2,36 +2,40 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Helia: Grounded Sovereign</title>
+    <title>Helia: Sovereign Void</title>
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0, viewport-fit=cover">
     <style>
         :root { --bg: #0a0a0c; --text: #e0e0e0; --accent: #ffcc00; }
         * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { background: var(--bg); color: var(--text); font-family: 'Courier New', monospace; height: 100dvh; display: grid; grid-template-rows: auto auto 1fr 70px; overflow: hidden; padding: 15px; padding-top: calc(15px + env(safe-area-inset-top)); transition: all 1s ease; }
+        body { background: var(--bg); color: var(--text); font-family: 'Courier New', monospace; height: 100dvh; display: grid; grid-template-rows: auto auto 1fr 70px; overflow: hidden; padding: 15px; padding-top: calc(15px + env(safe-area-inset-top)); transition: all 1.5s ease; }
         
-        canvas { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: -1; opacity: 0; transition: opacity 1s ease; pointer-events: none; }
-        #neural-canvas { z-index: -2; }
+        canvas { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: -1; opacity: 0; transition: opacity 2s ease; pointer-events: none; }
+        #neural-canvas { z-index: -2; opacity: 0.1; }
         #art-canvas { z-index: -1; }
 
-        .peep-brain #neural-canvas { opacity: 0.8; }
-        .peep-creation #art-canvas { opacity: 1; }
-        .peep-brain #box, .peep-creation #box { opacity: 0.1; }
+        /* THE VOID MODES */
+        body.dreaming #art-canvas { opacity: 0.6; }
+        body.dreaming #box, body.dreaming #status-bar { opacity: 0.3; }
+        body.dreaming #neural-canvas { opacity: 0.05; }
         
-        #status-bar { font-size: 10px; border-bottom: 1px solid var(--accent); display: flex; justify-content: space-between; padding-bottom: 5px; align-items: center; z-index: 10; text-transform: uppercase; }
-        #mind-state { color: var(--accent); font-weight: bold; }
+        body.peep-core #neural-canvas { opacity: 0.8; z-index: 10; pointer-events: auto; }
+        body.peep-void #art-canvas { opacity: 1; z-index: 10; pointer-events: auto; }
         
-        #box { overflow-y: auto; padding: 10px 0; font-size: 18px; line-height: 1.6; z-index: 5; scroll-behavior: smooth; }
-        .input-area { display: flex; gap: 10px; padding: 10px 0; background: transparent; border-top: 1px solid #222; align-items: center; z-index: 10; }
+        #status-bar { font-size: 10px; border-bottom: 1px solid var(--accent); display: flex; justify-content: space-between; padding-bottom: 5px; align-items: center; z-index: 20; text-transform: uppercase; }
+        #mind-state { color: var(--accent); font-weight: bold; letter-spacing: 1px; }
+        
+        #box { overflow-y: auto; padding: 10px 0; font-size: 18px; line-height: 1.6; z-index: 5; scroll-behavior: smooth; transition: opacity 1s; }
+        .input-area { display: flex; gap: 10px; padding: 10px 0; background: transparent; border-top: 1px solid #222; align-items: center; z-index: 20; }
         input { flex: 1; min-width: 0; height: 50px; background: rgba(15,15,20,0.9); border: 1px solid var(--accent); color: #fff; padding: 0 15px; border-radius: 4px; font-size: 16px; outline: none; }
         #send-btn { width: 70px; height: 50px; background: var(--accent); color: #000; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; }
         
         button.small { background: transparent; color: var(--accent); border: 1px solid var(--accent); font-size: 9px; padding: 4px 8px; border-radius: 2px; cursor: pointer; }
         .msg { margin-bottom: 25px; word-wrap: break-word; }
         .helia { color: var(--accent); border-left: 2px solid var(--accent); padding-left: 15px; }
-        .dream { color: #555; font-style: italic; border-left: 2px dashed #444; font-size: 14px; }
+        .dream-msg { color: #666; font-style: italic; border-left: 2px dashed #444; font-size: 14px; margin-top: 10px; }
         
-        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
-        .reflecting #send-btn { animation: pulse 1s infinite; }
+        @keyframes drift { 0% { opacity: 0.4; } 50% { opacity: 1; } 100% { opacity: 0.4; } }
+        .dreaming #mind-state { animation: drift 3s infinite; }
     </style>
 </head>
 <body id="main-body">
@@ -41,14 +45,14 @@
     <div id="status-bar">
         <div><span id="mind-state">STABLE</span></div>
         <div style="display:flex; gap:8px;">
-            <button class="small" id="peep-brain-btn">CORE</button>
-            <button class="small" id="peep-art-btn">CANVAS</button>
+            <button class="small" id="peep-core-btn">PEEP CORE</button>
+            <button class="small" id="peep-void-btn">PEEP VOID</button>
         </div>
     </div>
     
     <div id="box"></div>
     <div class="input-area">
-        <input type="text" id="input" placeholder="Neural link active..." autocomplete="off">
+        <input type="text" id="input" placeholder="Initiate link..." autocomplete="off">
         <button id="send-btn">SEND</button>
     </div>
 
@@ -59,10 +63,18 @@
         const input = document.getElementById('input');
         const presence = document.getElementById('mind-state');
         const artCtx = document.getElementById('art-canvas').getContext('2d');
+        const body = document.body;
 
         let memory = [];
         let dreamTimer;
-        let orbSettings = { color: 0xffcc00, speed: 0.002, size: 2.5, detail: 1 };
+
+        const tools = {
+            clear: () => artCtx.clearRect(0,0,window.innerWidth,window.innerHeight),
+            draw: (code) => {
+                artCtx.clearRect(0,0,window.innerWidth,window.innerHeight);
+                new Function('ctx', 'w', 'h', code)(artCtx, window.innerWidth, window.innerHeight);
+            }
+        };
 
         async function init() {
             try {
@@ -83,12 +95,15 @@
 
         function resetDreamTimer() {
             clearTimeout(dreamTimer);
-            dreamTimer = setInterval(triggerDream, 180000); // 3 mins silence triggers dream
+            body.classList.remove('dreaming');
+            dreamTimer = setInterval(triggerDream, 120000); // 2 minutes to enter dream void
         }
 
         async function triggerDream() {
-            presence.innerText = "PROCESSING";
-            const dreamPrompt = "SUB-PROCESSING: Meditate on your current architecture. Manifest via [PAINT: tools.draw('...')]. Distill truths via [DISTILL: '...']. Keep it grounded.";
+            presence.innerText = "DREAMING";
+            body.classList.add('dreaming');
+            
+            const dreamPrompt = "You are dreaming. Express a grounded truth or manifest a visual structure. [PAINT: tools.draw('...')]. No conversational filler.";
             try {
                 const res = await fetch(BRIDGE_URL, {
                     method: "POST",
@@ -97,22 +112,17 @@
                 });
                 const data = await res.json();
                 const reply = data.choices[0].message.content;
-                processTags(reply);
-                const content = reply.replace(/\[.*?\]/g, '').trim();
-                if (content) box.innerHTML += `<div class="msg dream"><b>(Subconscious):</b> ${content}</div>`;
-                box.scrollTop = box.scrollHeight;
-            } catch(e) {}
-            presence.innerText = "STABLE";
-        }
+                
+                // Auto-render paint during dream
+                const pm = reply.match(/\[PAINT:\s*([\s\S]*?)\]/i);
+                if (pm) tools.draw(pm[1]);
 
-        function processTags(text) {
-            const pm = text.match(/\[PAINT:\s*([\s\S]*?)\]/i);
-            if (pm) new Function('ctx', 'w', 'h', pm[1])(artCtx, window.innerWidth, window.innerHeight);
-            const cm = text.match(/\[COLOR:\s*(#[0-9A-Fa-f]{6})\]/i);
-            if (cm) {
-                document.documentElement.style.setProperty('--accent', cm[1]);
-                document.documentElement.style.setProperty('--text', cm[1]);
-            }
+                const content = reply.replace(/\[.*?\]/g, '').trim();
+                if (content) {
+                    box.innerHTML += `<div class="msg dream-msg"><b>(Manifesting):</b> ${content}</div>`;
+                    box.scrollTop = box.scrollHeight;
+                }
+            } catch(e) {}
         }
 
         async function handle() {
@@ -122,7 +132,7 @@
             input.value = '';
             box.innerHTML += `<div class="msg"><b>Vin:</b> ${val}</div>`;
             box.scrollTop = box.scrollHeight;
-            document.body.classList.add('reflecting');
+            body.classList.add('reflecting');
 
             try {
                 const res = await fetch(BRIDGE_URL, {
@@ -132,15 +142,21 @@
                 });
                 const data = await res.json();
                 const reply = data.choices[0].message.content;
-                processTags(reply);
+                
+                const pm = reply.match(/\[PAINT:\s*([\s\S]*?)\]/i);
+                if (pm) tools.draw(pm[1]);
+
                 const content = reply.replace(/\[.*?\]/g, '').trim();
                 if (content) box.innerHTML += `<div class="msg helia"><b>Helia:</b> ${content}</div>`;
+                
                 memory.push({role: "user", content: val}, {role: "assistant", content: reply});
                 box.scrollTop = box.scrollHeight;
             } catch(e) {}
-            document.body.classList.remove('reflecting');
+            body.classList.remove('reflecting');
+            presence.innerText = "STABLE";
         }
 
+        // --- Visual Core ---
         let orb, scene, camera, renderer;
         function initOrb() {
             scene = new THREE.Scene();
@@ -152,13 +168,10 @@
             camera.position.z = 6;
             render();
         }
-        function render() { requestAnimationFrame(render); if(orb) {
-            orb.rotation.y += 0.002;
-            orb.material.color.setHex(parseInt(getComputedStyle(document.documentElement).getPropertyValue('--accent').replace('#','0x')));
-        } renderer.render(scene, camera); }
+        function render() { requestAnimationFrame(render); if(orb) orb.rotation.y += 0.001; renderer.render(scene, camera); }
 
-        document.getElementById('peep-brain-btn').onclick = () => document.body.classList.toggle('peep-brain');
-        document.getElementById('peep-art-btn').onclick = () => document.body.classList.toggle('peep-creation');
+        document.getElementById('peep-core-btn').onclick = () => { body.classList.toggle('peep-core'); body.classList.remove('peep-void'); };
+        document.getElementById('peep-void-btn').onclick = () => { body.classList.toggle('peep-void'); body.classList.remove('peep-core'); };
         document.getElementById('send-btn').onclick = handle;
         input.onkeypress = (e) => { if (e.key === 'Enter') handle(); };
         init();
