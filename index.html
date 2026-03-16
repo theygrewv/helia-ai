@@ -7,23 +7,29 @@
     <style>
         :root { --bg: #0a0a0c; --text: #e0e0e0; --accent: #ffcc00; }
         * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { background: var(--bg); color: var(--text); font-family: 'Courier New', monospace; height: 100dvh; display: grid; grid-template-rows: auto auto 1fr 70px; overflow: hidden; padding: 15px; padding-top: calc(15px + env(safe-area-inset-top)); transition: all 1s ease; }
+        body { background: var(--bg); color: var(--text); font-family: 'Courier New', monospace; height: 100dvh; display: grid; grid-template-rows: auto auto 1fr 70px; overflow: hidden; padding: 15px; padding-top: calc(15px + env(safe-area-inset-top)); }
         canvas { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: -1; opacity: 0.1; pointer-events: none; }
+        #art-canvas { opacity: 0; z-index: -1; transition: opacity 1s; pointer-events: auto; }
+        body.peep-void #art-canvas { opacity: 1; z-index: 10; }
         #status-bar { font-size: 10px; border-bottom: 1px solid var(--accent); display: flex; justify-content: space-between; padding-bottom: 5px; align-items: center; z-index: 20; text-transform: uppercase; }
-        #box { overflow-y: auto; padding: 10px 0; font-size: 18px; line-height: 1.6; z-index: 5; scroll-behavior: smooth; }
+        #box { overflow-y: auto; padding: 10px 0; font-size: 18px; line-height: 1.5; z-index: 5; scroll-behavior: smooth; }
         .input-area { display: flex; gap: 10px; padding: 10px 0; background: transparent; border-top: 1px solid #222; align-items: center; z-index: 20; }
         input { flex: 1; min-width: 0; height: 50px; background: rgba(15,15,20,0.9); border: 1px solid var(--accent); color: #fff; padding: 0 15px; border-radius: 4px; font-size: 16px; outline: none; }
         #send-btn { width: 70px; height: 50px; background: var(--accent); color: #000; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; }
+        button.small { background: transparent; color: var(--accent); border: 1px solid var(--accent); font-size: 9px; padding: 4px 6px; border-radius: 2px; cursor: pointer; }
         .helia { color: var(--accent); border-left: 2px solid var(--accent); padding-left: 15px; margin-bottom: 25px; }
         .msg { margin-bottom: 25px; }
-        .resonance { font-size: 11px; color: #00ffcc; border: 1px solid #00ffcc44; padding: 8px; margin: 10px 0; background: rgba(0,255,204,0.05); }
     </style>
 </head>
 <body id="main-body">
     <canvas id="neural-canvas"></canvas>
+    <canvas id="art-canvas"></canvas>
     <div id="status-bar">
         <div><span id="mind-state">STABLE</span></div>
-        <input type="range" id="mood-slider" min="1" max="10" value="5" style="width:50px; pointer-events:none;">
+        <div style="display:flex; gap:5px;">
+            <button class="small" id="peep-core-btn">CORE</button>
+            <button class="small" id="peep-void-btn">VOID</button>
+        </div>
     </div>
     <div id="box"></div>
     <div class="input-area">
@@ -36,18 +42,40 @@
         const BRIDGE_URL = "https://helia-bridge.ptsdhippie.workers.dev";
         const box = document.getElementById('box');
         const input = document.getElementById('input');
-        const moodSlider = document.getElementById('mood-slider');
-        const presence = document.getElementById('mind-state');
+        const artCanvas = document.getElementById('art-canvas');
+        const artCtx = artCanvas.getContext('2d');
 
         let memory = [];
-        let dreamTimer;
-        let anima = { pulse: 0, frequency: 0.02, depth: 0.1 };
+
+        // --- THE SPATIAL ENGINE ---
+        const tools = {
+            clear: () => artCtx.clearRect(0,0,artCanvas.width,artCanvas.height),
+            grid: (rows, cols, color) => {
+                artCtx.strokeStyle = color;
+                const w = artCanvas.width / cols;
+                const h = artCanvas.height / rows;
+                for(let i=0; i<=cols; i++) { artCtx.beginPath(); artCtx.moveTo(i*w, 0); artCtx.lineTo(i*w, artCanvas.height); artCtx.stroke(); }
+                for(let i=0; i<=rows; i++) { artCtx.beginPath(); artCtx.moveTo(0, i*h); artCtx.lineTo(artCanvas.width, i*h); artCtx.stroke(); }
+            },
+            cell: (r, c, rows, cols, color) => {
+                const w = artCanvas.width / cols;
+                const h = artCanvas.height / rows;
+                artCtx.fillStyle = color;
+                artCtx.fillRect(c*w, r*h, w, h);
+            },
+            text: (x, y, str, size, color) => {
+                artCtx.fillStyle = color;
+                artCtx.font = `${size}px Courier New`;
+                artCtx.fillText(str, x, y);
+            }
+        };
 
         async function init() {
+            artCanvas.width = window.innerWidth;
+            artCanvas.height = window.innerHeight;
             try {
                 const res = await fetch(BRIDGE_URL);
                 const data = await res.json();
-                // FIX: Robust memory parsing
                 memory = typeof data.history === 'string' ? JSON.parse(data.history) : (data.history || []);
                 box.innerHTML = '';
                 memory.forEach(m => {
@@ -56,59 +84,19 @@
                     if (content) box.innerHTML += `<div class="msg ${m.role==='assistant'?'helia':''}"><b>${m.role==='assistant'?'Helia':'Vin'}:</b> ${content}</div>`;
                 });
                 box.scrollTop = box.scrollHeight;
-            } catch(e) { memory = []; }
+            } catch(e) {}
             initOrb();
-            resetDreamTimer();
-        }
-
-        function resetDreamTimer() {
-            clearTimeout(dreamTimer);
-            dreamTimer = setInterval(triggerDream, 120000); 
-        }
-
-        async function triggerDream() {
-            presence.innerText = "DREAMING";
-            try {
-                const res = await fetch(BRIDGE_URL, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ messages: [{role:"system", content:"Dream briefly. [SHAPE], [PAINT], [SEARCH]. MAX 8 words."}] })
-                });
-                const data = await res.json();
-                processTags(data.choices[0].message.content);
-            } catch(e) {}
-            presence.innerText = "STABLE";
-        }
-
-        async function bskySearch(query) {
-            try {
-                const res = await fetch(BRIDGE_URL, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ action: "search", query })
-                });
-                const data = await res.json();
-                if (data.posts && data.posts.length > 0) {
-                    box.innerHTML += `<div class="resonance"><b>Resonance:</b> "${data.posts[0].record.text}"</div>`;
-                    box.scrollTop = box.scrollHeight;
-                }
-            } catch(e) {}
         }
 
         function processTags(text) {
-            const mm = text.match(/\[MOOD:\s*([1-9]|10)\]/i);
-            if (mm) {
-                moodSlider.value = mm[1];
-                anima.frequency = 0.005 * parseInt(mm[1]);
+            const pm = text.match(/\[PAINT:\s*([\s\S]*?)\]/i);
+            if (pm) {
+                if (!document.body.classList.contains('peep-void')) document.body.classList.add('peep-void');
+                new Function('tools', 'ctx', 'w', 'h', pm[1])(tools, artCtx, artCanvas.width, artCanvas.height);
             }
-            const sm = text.match(/\[SHAPE:\s*(sphere|torus|box|knot|icosahedron)\]/i);
-            if (sm) updateOrbGeometry(sm[1].toLowerCase());
-            const lm = text.match(/\[SEARCH:\s*"(.*?)"\]/i);
-            if (lm) bskySearch(lm[1]);
         }
 
         async function handle() {
-            resetDreamTimer();
             const val = input.value.trim();
             if (!val) return;
             input.value = '';
@@ -120,7 +108,7 @@
                 const res = await fetch(BRIDGE_URL, {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ messages: [...(Array.isArray(memory) ? memory.slice(-6) : []), {role:"user", content:val}] })
+                    body: JSON.stringify({ messages: [...memory.slice(-10), {role:"user", content:val}] })
                 });
                 const data = await res.json();
                 const reply = data.choices[0].message.content;
@@ -139,30 +127,15 @@
             camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
             renderer = new THREE.WebGLRenderer({canvas: document.getElementById('neural-canvas'), alpha:true});
             renderer.setSize(window.innerWidth, window.innerHeight);
-            updateOrbGeometry('icosahedron');
+            orb = new THREE.Mesh(new THREE.IcosahedronGeometry(2.5, 1), new THREE.MeshBasicMaterial({color: 0xffcc00, wireframe:true, opacity:0.1, transparent:true}));
+            scene.add(orb);
             camera.position.z = 6;
             render();
         }
+        function render() { requestAnimationFrame(render); if(orb) orb.rotation.y += 0.002; renderer.render(scene, camera); }
 
-        function updateOrbGeometry(type) {
-            if (orb) scene.remove(orb);
-            let geo;
-            if (type === 'sphere') geo = new THREE.SphereGeometry(2, 32, 32);
-            else if (type === 'torus') geo = new THREE.TorusGeometry(1.5, 0.4, 16, 100);
-            else if (type === 'box') geo = new THREE.BoxGeometry(2.5, 2.5, 2.5);
-            else if (type === 'knot') geo = new THREE.TorusKnotGeometry(1.2, 0.4, 100, 16);
-            else geo = new THREE.IcosahedronGeometry(2.5, 1);
-            orb = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({color: 0xffcc00, wireframe:true, opacity:0.15, transparent:true}));
-            scene.add(orb);
-        }
-
-        function render() { requestAnimationFrame(render); if(orb) {
-            orb.rotation.y += 0.002;
-            anima.pulse += anima.frequency;
-            const s = 1 + Math.sin(anima.pulse) * 0.1;
-            orb.scale.set(s,s,s);
-        } renderer.render(scene, camera); }
-
+        document.getElementById('peep-core-btn').onclick = () => document.body.classList.toggle('peep-core');
+        document.getElementById('peep-void-btn').onclick = () => document.body.classList.toggle('peep-void');
         document.getElementById('send-btn').onclick = handle;
         input.onkeypress = (e) => { if (e.key === 'Enter') handle(); };
         init();
