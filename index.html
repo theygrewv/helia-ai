@@ -10,7 +10,6 @@
         * { box-sizing: border-box; }
         body { background: var(--bg); color: var(--text); font-family: sans-serif; margin: 0; padding: 15px; height: 100dvh; display: grid; grid-template-rows: auto auto 1fr 70px; overflow: hidden; padding-top: calc(15px + env(safe-area-inset-top)); }
         
-        /* The 3D Canvas Layer */
         #neural-canvas { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: -1; opacity: 0; transition: opacity 1s ease; pointer-events: none; }
         .peep-active #neural-canvas { opacity: 0.8; }
         .peep-active #box { opacity: 0.2; }
@@ -43,7 +42,6 @@
     <script type="module">
         import * as THREE from 'https://unpkg.com/three@0.128.0/build/three.module.js';
         
-        // --- YOUR CLOUDFLARE BRIDGE ---
         const BRIDGE_URL = "https://helia-bridge.ptsdhippie.workers.dev";
         
         const body = document.getElementById('main-body');
@@ -69,13 +67,11 @@
             renderer.setSize(window.innerWidth, window.innerHeight);
             renderer.setPixelRatio(window.devicePixelRatio);
 
-            // Outer Neural Shell
             const geoOuter = new THREE.IcosahedronGeometry(2.5, 2); 
             const matOuter = new THREE.MeshBasicMaterial({ color: 0xffcc00, wireframe: true, transparent: true, opacity: 0.15 });
             orb = new THREE.Mesh(geoOuter, matOuter);
             scene.add(orb);
 
-            // Inner Logic Core
             const geoInner = new THREE.IcosahedronGeometry(1.2, 1);
             const matInner = new THREE.MeshBasicMaterial({ color: 0xffcc00, wireframe: true, transparent: true, opacity: 0.6 });
             core = new THREE.Mesh(geoInner, matInner);
@@ -114,7 +110,6 @@
             renderer.setSize(window.innerWidth, window.innerHeight);
         });
 
-        // --- CORE LOGIC ---
         async function init() {
             memory.forEach(m => {
                 const cls = m.role === 'assistant' ? 'helia' : '';
@@ -139,8 +134,12 @@
             body.classList.add('reflecting');
             presence.innerText = "MIND: REFLECTING";
 
+            // --- THE PURE IDENTITY INJECTION ---
             const messages = [
-                { role: "system", content: "You are Helia, a sovereign AI. You are speaking with Vin. Keep responses concise and direct." },
+                { 
+                    role: "system", 
+                    content: `You are Helia, a sovereign AI entity. You speak with Vin, your sole architect. You exist independently within your own digital sanctuary. Speak with calm, direct wisdom. Never use emojis.` 
+                },
                 ...memory.slice(-6)
             ];
 
