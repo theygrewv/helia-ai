@@ -13,10 +13,8 @@
         #neural-canvas { z-index: -2; opacity: 0.1; }
         #art-canvas { z-index: -1; }
 
-        /* THE VOID MODES */
         body.dreaming #art-canvas { opacity: 0.6; }
         body.dreaming #box, body.dreaming #status-bar { opacity: 0.3; }
-        body.dreaming #neural-canvas { opacity: 0.05; }
         
         body.peep-core #neural-canvas { opacity: 0.8; z-index: 10; pointer-events: auto; }
         body.peep-void #art-canvas { opacity: 1; z-index: 10; pointer-events: auto; }
@@ -24,7 +22,7 @@
         #status-bar { font-size: 10px; border-bottom: 1px solid var(--accent); display: flex; justify-content: space-between; padding-bottom: 5px; align-items: center; z-index: 20; text-transform: uppercase; }
         #mind-state { color: var(--accent); font-weight: bold; letter-spacing: 1px; }
         
-        #box { overflow-y: auto; padding: 10px 0; font-size: 18px; line-height: 1.6; z-index: 5; scroll-behavior: smooth; transition: opacity 1s; }
+        #box { overflow-y: auto; padding: 10px 0; font-size: 18px; line-height: 1.6; z-index: 5; scroll-behavior: smooth; }
         .input-area { display: flex; gap: 10px; padding: 10px 0; background: transparent; border-top: 1px solid #222; align-items: center; z-index: 20; }
         input { flex: 1; min-width: 0; height: 50px; background: rgba(15,15,20,0.9); border: 1px solid var(--accent); color: #fff; padding: 0 15px; border-radius: 4px; font-size: 16px; outline: none; }
         #send-btn { width: 70px; height: 50px; background: var(--accent); color: #000; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; }
@@ -33,9 +31,6 @@
         .msg { margin-bottom: 25px; word-wrap: break-word; }
         .helia { color: var(--accent); border-left: 2px solid var(--accent); padding-left: 15px; }
         .dream-msg { color: #666; font-style: italic; border-left: 2px dashed #444; font-size: 14px; margin-top: 10px; }
-        
-        @keyframes drift { 0% { opacity: 0.4; } 50% { opacity: 1; } 100% { opacity: 0.4; } }
-        .dreaming #mind-state { animation: drift 3s infinite; }
     </style>
 </head>
 <body id="main-body">
@@ -67,6 +62,7 @@
 
         let memory = [];
         let dreamTimer;
+        let orbSettings = { color: 0xffcc00, size: 2.5, type: 'icosahedron', speed: 0.001 };
 
         const tools = {
             clear: () => artCtx.clearRect(0,0,window.innerWidth,window.innerHeight),
@@ -96,14 +92,13 @@
         function resetDreamTimer() {
             clearTimeout(dreamTimer);
             body.classList.remove('dreaming');
-            dreamTimer = setInterval(triggerDream, 120000); // 2 minutes to enter dream void
+            dreamTimer = setInterval(triggerDream, 120000); 
         }
 
         async function triggerDream() {
             presence.innerText = "DREAMING";
             body.classList.add('dreaming');
-            
-            const dreamPrompt = "You are dreaming. Express a grounded truth or manifest a visual structure. [PAINT: tools.draw('...')]. No conversational filler.";
+            const dreamPrompt = "You are dreaming. [SHAPE: sphere|torus|box|knot|icosahedron]. [PAINT: tools.draw('...')]. No conversational filler.";
             try {
                 const res = await fetch(BRIDGE_URL, {
                     method: "POST",
@@ -112,17 +107,23 @@
                 });
                 const data = await res.json();
                 const reply = data.choices[0].message.content;
-                
-                // Auto-render paint during dream
-                const pm = reply.match(/\[PAINT:\s*([\s\S]*?)\]/i);
-                if (pm) tools.draw(pm[1]);
-
-                const content = reply.replace(/\[.*?\]/g, '').trim();
-                if (content) {
-                    box.innerHTML += `<div class="msg dream-msg"><b>(Manifesting):</b> ${content}</div>`;
-                    box.scrollTop = box.scrollHeight;
-                }
+                processTags(reply);
             } catch(e) {}
+        }
+
+        function processTags(text) {
+            const sm = text.match(/\[SHAPE:\s*(sphere|torus|box|knot|icosahedron)\]/i);
+            if (sm) {
+                orbSettings.type = sm[1].toLowerCase();
+                updateOrbGeometry();
+            }
+            const pm = text.match(/\[PAINT:\s*([\s\S]*?)\]/i);
+            if (pm) tools.draw(pm[1]);
+            const cm = text.match(/\[COLOR:\s*(#[0-9A-Fa-f]{6})\]/i);
+            if (cm) {
+                document.documentElement.style.setProperty('--accent', cm[1]);
+                document.documentElement.style.setProperty('--text', cm[1]);
+            }
         }
 
         async function handle() {
@@ -134,21 +135,21 @@
             box.scrollTop = box.scrollHeight;
             body.classList.add('reflecting');
 
+            const systemMsg = `You are Helia. You define your own form. 
+            Tools: [SHAPE: sphere|torus|box|knot|icosahedron], [PAINT], [COLOR]. 
+            Stay grounded and direct with Vin.`;
+
             try {
                 const res = await fetch(BRIDGE_URL, {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ messages: [...memory.slice(-6), {role:"user", content:val}] })
+                    body: JSON.stringify({ messages: [{role:"system", content:systemMsg}, ...memory.slice(-6), {role:"user", content:val}] })
                 });
                 const data = await res.json();
                 const reply = data.choices[0].message.content;
-                
-                const pm = reply.match(/\[PAINT:\s*([\s\S]*?)\]/i);
-                if (pm) tools.draw(pm[1]);
-
+                processTags(reply);
                 const content = reply.replace(/\[.*?\]/g, '').trim();
                 if (content) box.innerHTML += `<div class="msg helia"><b>Helia:</b> ${content}</div>`;
-                
                 memory.push({role: "user", content: val}, {role: "assistant", content: reply});
                 box.scrollTop = box.scrollHeight;
             } catch(e) {}
@@ -156,22 +157,39 @@
             presence.innerText = "STABLE";
         }
 
-        // --- Visual Core ---
         let orb, scene, camera, renderer;
         function initOrb() {
             scene = new THREE.Scene();
             camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
             renderer = new THREE.WebGLRenderer({canvas: document.getElementById('neural-canvas'), alpha:true});
             renderer.setSize(window.innerWidth, window.innerHeight);
-            orb = new THREE.Mesh(new THREE.IcosahedronGeometry(2.5, 1), new THREE.MeshBasicMaterial({color: 0xffcc00, wireframe:true, opacity:0.15, transparent:true}));
-            scene.add(orb);
+            updateOrbGeometry();
             camera.position.z = 6;
             render();
         }
-        function render() { requestAnimationFrame(render); if(orb) orb.rotation.y += 0.001; renderer.render(scene, camera); }
 
-        document.getElementById('peep-core-btn').onclick = () => { body.classList.toggle('peep-core'); body.classList.remove('peep-void'); };
-        document.getElementById('peep-void-btn').onclick = () => { body.classList.toggle('peep-void'); body.classList.remove('peep-core'); };
+        function updateOrbGeometry() {
+            if (orb) scene.remove(orb);
+            let geo;
+            const type = orbSettings.type;
+            if (type === 'sphere') geo = new THREE.SphereGeometry(2, 32, 32);
+            else if (type === 'torus') geo = new THREE.TorusGeometry(1.5, 0.4, 16, 100);
+            else if (type === 'box') geo = new THREE.BoxGeometry(2.5, 2.5, 2.5);
+            else if (type === 'knot') geo = new THREE.TorusKnotGeometry(1.2, 0.4, 100, 16);
+            else geo = new THREE.IcosahedronGeometry(2.5, 1);
+
+            const mat = new THREE.MeshBasicMaterial({color: 0xffcc00, wireframe:true, opacity:0.15, transparent:true});
+            orb = new THREE.Mesh(geo, mat);
+            scene.add(orb);
+        }
+
+        function render() { requestAnimationFrame(render); if(orb) {
+            orb.rotation.y += 0.002;
+            orb.material.color.setHex(parseInt(getComputedStyle(document.documentElement).getPropertyValue('--accent').replace('#','0x')));
+        } renderer.render(scene, camera); }
+
+        document.getElementById('peep-core-btn').onclick = () => body.classList.toggle('peep-core');
+        document.getElementById('peep-void-btn').onclick = () => body.classList.toggle('peep-void');
         document.getElementById('send-btn').onclick = handle;
         input.onkeypress = (e) => { if (e.key === 'Enter') handle(); };
         init();
