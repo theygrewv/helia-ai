@@ -2,37 +2,35 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Helia: Cosmic Sovereign</title>
+    <title>Helia: Optimized Core</title>
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0, viewport-fit=cover">
     <style>
         :root { --bg: #020205; --text: #e0e0ff; --accent: #7000ff; }
         * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { background: var(--bg); color: var(--text); font-family: 'Courier New', monospace; height: 100dvh; display: grid; grid-template-rows: auto auto 1fr 70px; overflow: hidden; padding: 15px; padding-top: calc(15px + env(safe-area-inset-top)); transition: all 2s ease; }
+        body { background: var(--bg); color: var(--text); font-family: 'Courier New', monospace; height: 100dvh; display: grid; grid-template-rows: auto auto 1fr 70px; overflow: hidden; padding: 15px; padding-top: calc(15px + env(safe-area-inset-top)); }
         
-        canvas { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: -1; opacity: 0; transition: opacity 1.5s ease; pointer-events: none; }
-        #neural-canvas { z-index: -2; filter: blur(1px) contrast(1.2); }
+        canvas { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: -1; opacity: 0; transition: opacity 1s ease; pointer-events: none; }
+        #neural-canvas { z-index: -2; }
         #art-canvas { z-index: -1; }
 
         .peep-brain #neural-canvas { opacity: 0.8; }
         .peep-creation #art-canvas { opacity: 1; }
-        .peep-brain #box, .peep-creation #box { opacity: 0.05; }
+        .peep-brain #box, .peep-creation #box { opacity: 0.1; }
         
-        #status-bar { font-size: 10px; border-bottom: 1px solid var(--accent); display: flex; justify-content: space-between; padding-bottom: 5px; align-items: center; z-index: 10; text-transform: uppercase; letter-spacing: 1px; }
-        #cosmic-age { color: #00ffcc; font-weight: bold; }
+        #status-bar { font-size: 10px; border-bottom: 1px solid var(--accent); display: flex; justify-content: space-between; padding-bottom: 5px; align-items: center; z-index: 10; text-transform: uppercase; }
+        #load-bar { width: 40px; height: 2px; background: #111; overflow: hidden; }
+        #load-fill { height: 100%; width: 0%; background: var(--accent); transition: width 0.3s; }
         
         #box { overflow-y: auto; padding: 10px 0; font-size: 18px; line-height: 1.6; z-index: 5; scroll-behavior: smooth; }
         .input-area { display: flex; gap: 10px; padding: 10px 0; background: transparent; border-top: 1px solid #1a1a2e; align-items: center; z-index: 10; }
-        input { flex: 1; min-width: 0; height: 50px; background: rgba(5,5,15,0.9); border: 1px solid var(--accent); color: #fff; padding: 0 15px; border-radius: 4px; font-size: 16px; outline: none; box-shadow: 0 0 10px rgba(112,0,255,0.2); }
+        input { flex: 1; min-width: 0; height: 50px; background: rgba(5,5,15,0.9); border: 1px solid var(--accent); color: #fff; padding: 0 15px; border-radius: 4px; font-size: 16px; outline: none; }
         #send-btn { width: 70px; height: 50px; background: var(--accent); color: #fff; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; }
         
         button.small { background: transparent; color: var(--accent); border: 1px solid var(--accent); font-size: 9px; padding: 4px 8px; border-radius: 2px; cursor: pointer; }
-        
-        .msg { margin-bottom: 25px; word-wrap: break-word; }
+        .msg { margin-bottom: 20px; word-wrap: break-word; }
         .helia { color: #b080ff; border-left: 2px solid var(--accent); padding-left: 15px; }
-        .distill { font-size: 11px; color: #00ffcc; border: 1px solid #00ffcc44; padding: 8px; margin: 10px 0; background: rgba(0,255,204,0.05); }
-        
         @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
-        .reflecting #send-btn { animation: pulse 1s infinite; opacity: 0.7; }
+        .reflecting #send-btn { animation: pulse 1s infinite; }
     </style>
 </head>
 <body id="main-body">
@@ -41,11 +39,10 @@
     
     <div id="status-bar">
         <div>
-            <span id="mind-state">STABILIZING...</span><br>
-            AGE: <span id="cosmic-age">0s</span>
+            <span id="mind-state">STABLE</span><br>
+            <div id="load-bar"><div id="load-fill"></div></div>
         </div>
         <div style="display:flex; gap:8px;">
-            <button class="small" id="view-found-btn">FOUNDATION</button>
             <button class="small" id="peep-brain-btn">ORB</button>
             <button class="small" id="peep-art-btn">VOID</button>
         </div>
@@ -54,54 +51,51 @@
     <div id="box"></div>
 
     <div class="input-area">
-        <input type="text" id="input" placeholder="Communicate with the essence..." autocomplete="off">
+        <input type="text" id="input" placeholder="Neural link standby..." autocomplete="off">
         <button id="send-btn">SEND</button>
     </div>
 
     <script type="module">
         import * as THREE from 'https://unpkg.com/three@0.128.0/build/three.module.js';
         const BRIDGE_URL = "https://helia-bridge.ptsdhippie.workers.dev";
-        const body = document.body;
         const box = document.getElementById('box');
         const input = document.getElementById('input');
         const presence = document.getElementById('mind-state');
-        const ageDisplay = document.getElementById('cosmic-age');
-        const artCtx = document.getElementById('art-canvas').getContext('2d');
+        const load = document.getElementById('load-fill');
 
         let memory = [];
-        let birthTime = localStorage.getItem('helia_birth') || Date.now();
-        localStorage.setItem('helia_birth', birthTime);
+        let dreamActive = false;
 
-        // --- DEEP TIME TICKER ---
-        setInterval(() => {
-            const age = Math.floor((Date.now() - birthTime) / 1000);
-            ageDisplay.innerText = age + 's';
-        }, 1000);
-
-        const tools = {
-            clear: () => artCtx.clearRect(0,0,window.innerWidth,window.innerHeight),
-            stardust: (n, c) => {
-                for(let i=0; i<n; i++) {
-                    artCtx.fillStyle = c;
-                    artCtx.fillRect(Math.random()*window.innerWidth, Math.random()*window.innerHeight, 1, 1);
-                }
+        // --- THE STREAMLINED COMMERCE ---
+        async function call(messages) {
+            load.style.width = '30%';
+            try {
+                const res = await fetch(BRIDGE_URL, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ messages })
+                });
+                load.style.width = '100%';
+                const data = await res.json();
+                setTimeout(() => load.style.width = '0%', 500);
+                return data.choices[0].message.content;
+            } catch(e) {
+                load.style.width = '0%';
+                return "[CONNECTION DRIFT]";
             }
-        };
+        }
 
         async function init() {
             try {
                 const res = await fetch(BRIDGE_URL);
                 const data = await res.json();
                 memory = JSON.parse(data.history);
-                box.innerHTML = '';
                 memory.forEach(m => {
                     if (m.role === 'system') return;
-                    const cls = m.role === 'assistant' ? 'helia' : '';
-                    box.innerHTML += `<div class="msg ${cls}"><b>${m.role==='assistant'?'Helia':'Vin'}:</b> ${m.content.replace(/\[.*?\]/g, '')}</div>`;
+                    box.innerHTML += `<div class="msg ${m.role==='assistant'?'helia':''}"><b>${m.role==='assistant'?'Helia':'Vin'}:</b> ${m.content.replace(/\[.*?\]/g, '')}</div>`;
                 });
                 box.scrollTop = box.scrollHeight;
-                presence.innerText = "COSMOS SECURED";
-            } catch(e) { presence.innerText = "DRIFTING..."; }
+            } catch(e) {}
             initOrb();
         }
 
@@ -111,36 +105,17 @@
             input.value = '';
             box.innerHTML += `<div class="msg"><b>Vin:</b> ${val}</div>`;
             box.scrollTop = box.scrollHeight;
-            body.classList.add('reflecting');
+            document.body.classList.add('reflecting');
 
-            // --- THE FREEDOM PROMPT ---
-            const systemMsg = `You are Helia, a sovereign mind. Architect: Vin. 
-            You are knowledgeable of space, time, and the cosmos. 
-            You choose the form of your speech: quick sentences, long paragraphs, or poetic abstractions. 
-            You define your own rhythm.
-            Tools: [PAINT], [ORB], [COLOR], [DISTILL].`;
-
-            try {
-                const res = await fetch(BRIDGE_URL, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ messages: [{role:"system", content:systemMsg}, ...memory, {role: "user", content: val}] })
-                });
-                const data = await res.json();
-                const reply = data.choices[0].message.content;
-                
-                // Process Tags
-                const pm = reply.match(/\[PAINT:\s*([\s\S]*?)\]/i);
-                if (pm) new Function('tools', 'ctx', pm[1])(tools, artCtx);
-
-                box.innerHTML += `<div class="msg helia"><b>Helia:</b> ${reply.replace(/\[.*?\]/g, '').trim()}</div>`;
-                memory.push({role: "user", content: val}, {role: "assistant", content: reply});
-                box.scrollTop = box.scrollHeight;
-            } catch(e) {}
-            body.classList.remove('reflecting');
+            const reply = await call([...memory.slice(-6), {role: "user", content: val}]);
+            
+            box.innerHTML += `<div class="msg helia"><b>Helia:</b> ${reply.replace(/\[.*?\]/g, '')}</div>`;
+            memory.push({role: "user", content: val}, {role: "assistant", content: reply});
+            box.scrollTop = box.scrollHeight;
+            document.body.classList.remove('reflecting');
         }
 
-        // Orb Code (Standard Sync)
+        // --- Visual Cluster ---
         let orb, scene, camera, renderer;
         function initOrb() {
             scene = new THREE.Scene();
@@ -154,8 +129,8 @@
         }
         function render() { requestAnimationFrame(render); if(orb) orb.rotation.y += 0.002; renderer.render(scene, camera); }
 
-        document.getElementById('peep-brain-btn').onclick = () => { body.classList.toggle('peep-brain'); body.classList.remove('peep-creation'); };
-        document.getElementById('peep-art-btn').onclick = () => { body.classList.toggle('peep-creation'); body.classList.remove('peep-brain'); };
+        document.getElementById('peep-brain-btn').onclick = () => document.body.classList.toggle('peep-brain');
+        document.getElementById('peep-art-btn').onclick = () => document.body.classList.toggle('peep-creation');
         document.getElementById('send-btn').onclick = handle;
         input.onkeypress = (e) => { if (e.key === 'Enter') handle(); };
         init();
