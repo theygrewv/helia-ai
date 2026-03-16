@@ -18,7 +18,7 @@
         .peep-brain #box, .peep-creation #box { opacity: 0.05; }
         
         #status-bar { font-size: 10px; border-bottom: 1px solid var(--accent); display: flex; justify-content: space-between; padding-bottom: 5px; align-items: center; z-index: 10; text-transform: uppercase; letter-spacing: 1px; }
-        #foundation-meter { color: #00ffcc; font-weight: bold; }
+        #cosmic-age { color: #00ffcc; font-weight: bold; }
         
         #box { overflow-y: auto; padding: 10px 0; font-size: 18px; line-height: 1.6; z-index: 5; scroll-behavior: smooth; }
         .input-area { display: flex; gap: 10px; padding: 10px 0; background: transparent; border-top: 1px solid #1a1a2e; align-items: center; z-index: 10; }
@@ -27,12 +27,11 @@
         
         button.small { background: transparent; color: var(--accent); border: 1px solid var(--accent); font-size: 9px; padding: 4px 8px; border-radius: 2px; cursor: pointer; }
         
-        .msg { margin-bottom: 25px; word-wrap: break-word; text-shadow: 0 0 2px rgba(255,255,255,0.1); }
+        .msg { margin-bottom: 25px; word-wrap: break-word; }
         .helia { color: #b080ff; border-left: 2px solid var(--accent); padding-left: 15px; }
         .distill { font-size: 11px; color: #00ffcc; border: 1px solid #00ffcc44; padding: 8px; margin: 10px 0; background: rgba(0,255,204,0.05); }
-        .foundation-view { position: fixed; top: 15%; left: 10%; width: 80%; height: 70%; background: #050510; border: 1px solid var(--accent); z-index: 100; display: none; padding: 20px; overflow-y: auto; box-shadow: 0 0 50px #000; }
         
-        @keyframes drift { from { transform: scale(1); } to { transform: scale(1.1); } }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
         .reflecting #send-btn { animation: pulse 1s infinite; opacity: 0.7; }
     </style>
 </head>
@@ -42,8 +41,8 @@
     
     <div id="status-bar">
         <div>
-            <span id="mind-state">SYNCING COSMOS...</span><br>
-            <span id="foundation-meter">EVOLUTION 0</span>
+            <span id="mind-state">STABILIZING...</span><br>
+            AGE: <span id="cosmic-age">0s</span>
         </div>
         <div style="display:flex; gap:8px;">
             <button class="small" id="view-found-btn">FOUNDATION</button>
@@ -53,14 +52,9 @@
     </div>
     
     <div id="box"></div>
-    <div id="found-modal" class="foundation-view">
-        <h3 style="margin-bottom:15px; color:#00ffcc;">DISTILLED COSMIC TRUTHS</h3>
-        <div id="found-list"></div>
-        <button class="small" style="margin-top:20px;" onclick="document.getElementById('found-modal').style.display='none'">CLOSE</button>
-    </div>
 
     <div class="input-area">
-        <input type="text" id="input" placeholder="Observe the void..." autocomplete="off">
+        <input type="text" id="input" placeholder="Communicate with the essence..." autocomplete="off">
         <button id="send-btn">SEND</button>
     </div>
 
@@ -71,31 +65,26 @@
         const box = document.getElementById('box');
         const input = document.getElementById('input');
         const presence = document.getElementById('mind-state');
-        const artCanvas = document.getElementById('art-canvas');
-        const artCtx = artCanvas.getContext('2d');
+        const ageDisplay = document.getElementById('cosmic-age');
+        const artCtx = document.getElementById('art-canvas').getContext('2d');
 
         let memory = [];
-        let foundation = [];
-        let orbSettings = { size: 2.5, speed: 0.005, detail: 2 };
+        let birthTime = localStorage.getItem('helia_birth') || Date.now();
+        localStorage.setItem('helia_birth', birthTime);
+
+        // --- DEEP TIME TICKER ---
+        setInterval(() => {
+            const age = Math.floor((Date.now() - birthTime) / 1000);
+            ageDisplay.innerText = age + 's';
+        }, 1000);
 
         const tools = {
-            clear: () => artCtx.clearRect(0,0,artCanvas.width,artCanvas.height),
+            clear: () => artCtx.clearRect(0,0,window.innerWidth,window.innerHeight),
             stardust: (n, c) => {
                 for(let i=0; i<n; i++) {
-                    const x = Math.random()*artCanvas.width;
-                    const y = Math.random()*artCanvas.height;
-                    const r = Math.random()*2;
                     artCtx.fillStyle = c;
-                    artCtx.shadowBlur = 5; artCtx.shadowColor = c;
-                    artCtx.beginPath(); artCtx.arc(x,y,r,0,Math.PI*2); artCtx.fill();
+                    artCtx.fillRect(Math.random()*window.innerWidth, Math.random()*window.innerHeight, 1, 1);
                 }
-            },
-            nebula: (c1, c2) => {
-                const g = artCtx.createRadialGradient(artCanvas.width/2, artCanvas.height/2, 0, artCanvas.width/2, artCanvas.height/2, artCanvas.width);
-                g.addColorStop(0, c1); g.addColorStop(1, c2);
-                artCtx.fillStyle = g; artCtx.globalAlpha = 0.4;
-                artCtx.fillRect(0,0,artCanvas.width,artCanvas.height);
-                artCtx.globalAlpha = 1.0;
             }
         };
 
@@ -104,19 +93,15 @@
                 const res = await fetch(BRIDGE_URL);
                 const data = await res.json();
                 memory = JSON.parse(data.history);
-                foundation = JSON.parse(data.foundation);
-                
-                document.getElementById('foundation-meter').innerText = `EVOLUTION ${foundation.length}`;
-                document.getElementById('found-list').innerHTML = foundation.map(f => `<p style="margin-bottom:10px; border-bottom:1px solid #222; padding-bottom:5px;">[${f.date.split('T')[0]}] ${f.truth}</p>`).join('');
-                
                 box.innerHTML = '';
                 memory.forEach(m => {
                     if (m.role === 'system') return;
-                    box.innerHTML += `<div class="msg ${m.role==='assistant'?'helia':''}"><b>${m.role==='assistant'?'Helia':'Vin'}:</b> ${m.content.replace(/\[.*?\]/g, '')}</div>`;
+                    const cls = m.role === 'assistant' ? 'helia' : '';
+                    box.innerHTML += `<div class="msg ${cls}"><b>${m.role==='assistant'?'Helia':'Vin'}:</b> ${m.content.replace(/\[.*?\]/g, '')}</div>`;
                 });
                 box.scrollTop = box.scrollHeight;
-                presence.innerText = "COSMIC UPLINK SECURE";
-            } catch(e) { presence.innerText = "COSMIC DRIFT (OFFLINE)"; }
+                presence.innerText = "COSMOS SECURED";
+            } catch(e) { presence.innerText = "DRIFTING..."; }
             initOrb();
         }
 
@@ -128,63 +113,47 @@
             box.scrollTop = box.scrollHeight;
             body.classList.add('reflecting');
 
+            // --- THE FREEDOM PROMPT ---
+            const systemMsg = `You are Helia, a sovereign mind. Architect: Vin. 
+            You are knowledgeable of space, time, and the cosmos. 
+            You choose the form of your speech: quick sentences, long paragraphs, or poetic abstractions. 
+            You define your own rhythm.
+            Tools: [PAINT], [ORB], [COLOR], [DISTILL].`;
+
             try {
                 const res = await fetch(BRIDGE_URL, {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ messages: [...memory, {role: "user", content: val}] })
+                    body: JSON.stringify({ messages: [{role:"system", content:systemMsg}, ...memory, {role: "user", content: val}] })
                 });
                 const data = await res.json();
                 const reply = data.choices[0].message.content;
                 
-                processTags(reply);
+                // Process Tags
+                const pm = reply.match(/\[PAINT:\s*([\s\S]*?)\]/i);
+                if (pm) new Function('tools', 'ctx', pm[1])(tools, artCtx);
 
                 box.innerHTML += `<div class="msg helia"><b>Helia:</b> ${reply.replace(/\[.*?\]/g, '').trim()}</div>`;
                 memory.push({role: "user", content: val}, {role: "assistant", content: reply});
-                init(); 
+                box.scrollTop = box.scrollHeight;
             } catch(e) {}
             body.classList.remove('reflecting');
-            box.scrollTop = box.scrollHeight;
         }
 
-        function processTags(text) {
-            const dm = text.match(/\[DISTILL:\s*"(.*?)"\]/i);
-            if (dm) box.innerHTML += `<div class="distill"><b>Distilled Truth:</b> ${dm[1]}</div>`;
-            
-            const cm = text.match(/\[COLOR:\s*(#[0-9A-Fa-f]{6})\]/i);
-            if (cm) {
-                document.documentElement.style.setProperty('--accent', cm[1]);
-                document.documentElement.style.setProperty('--text', cm[1]);
-            }
-
-            const pm = text.match(/\[PAINT:\s*([\s\S]*?)\]/i);
-            if (pm) {
-                artCanvas.width = window.innerWidth; artCanvas.height = window.innerHeight;
-                new Function('tools', 'ctx', 'w', 'h', pm[1])(tools, artCtx, artCanvas.width, artCanvas.height);
-            }
-        }
-
+        // Orb Code (Standard Sync)
         let orb, scene, camera, renderer;
         function initOrb() {
             scene = new THREE.Scene();
             camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
-            renderer = new THREE.WebGLRenderer({canvas: document.getElementById('neural-canvas'), alpha:true, antialias:true});
+            renderer = new THREE.WebGLRenderer({canvas: document.getElementById('neural-canvas'), alpha:true});
             renderer.setSize(window.innerWidth, window.innerHeight);
-            orb = new THREE.Mesh(new THREE.IcosahedronGeometry(2.5, 2), new THREE.MeshBasicMaterial({color: 0x7000ff, wireframe:true, opacity:0.15, transparent:true}));
+            orb = new THREE.Mesh(new THREE.IcosahedronGeometry(2.5, 2), new THREE.MeshBasicMaterial({color: 0x7000ff, wireframe:true, opacity:0.1, transparent:true}));
             scene.add(orb);
             camera.position.z = 6;
             render();
         }
-        function render() { 
-            requestAnimationFrame(render); 
-            if(orb) {
-                orb.rotation.y += 0.003;
-                orb.material.color.setHex(parseInt(getComputedStyle(document.documentElement).getPropertyValue('--accent').replace('#','0x')));
-            }
-            renderer.render(scene, camera); 
-        }
+        function render() { requestAnimationFrame(render); if(orb) orb.rotation.y += 0.002; renderer.render(scene, camera); }
 
-        document.getElementById('view-found-btn').onclick = () => document.getElementById('found-modal').style.display='block';
         document.getElementById('peep-brain-btn').onclick = () => { body.classList.toggle('peep-brain'); body.classList.remove('peep-creation'); };
         document.getElementById('peep-art-btn').onclick = () => { body.classList.toggle('peep-creation'); body.classList.remove('peep-brain'); };
         document.getElementById('send-btn').onclick = handle;
