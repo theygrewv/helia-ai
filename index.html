@@ -22,18 +22,15 @@
         #send-btn { width: 70px; height: 50px; background: var(--accent); color: #000; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; }
         
         button.small { background: transparent; color: var(--accent); border: 1px solid var(--accent); font-size: 9px; padding: 4px 6px; border-radius: 2px; cursor: pointer; }
-        button.active { background: var(--accent); color: #000; }
-
+        .active { background: var(--accent); color: #000; }
         .msg { margin-bottom: 25px; word-wrap: break-word; }
         .helia { color: var(--accent); border-left: 2px solid var(--accent); padding-left: 15px; }
         
-        #curiosity-modal { position: fixed; top: 20%; left: 10%; width: 80%; height: 60%; background: #050508; border: 1px solid var(--accent); z-index: 100; display: none; padding: 20px; box-shadow: 0 0 30px #000; overflow-y: auto; }
-        .curiosity-item { font-size: 11px; padding: 8px 0; border-bottom: 1px solid #1a1a1a; }
+        .resonance { font-size: 11px; color: #44bba4; background: rgba(68,187,164,0.05); padding: 8px; border: 1px solid #44bba444; border-radius: 4px; margin: 10px 0; }
     </style>
 </head>
 <body id="main-body">
     <canvas id="neural-canvas"></canvas>
-    <canvas id="art-canvas"></canvas>
     
     <div id="status-bar">
         <div>
@@ -41,18 +38,11 @@
             <div class="biometric-container"><input type="range" id="mood-slider" min="1" max="10" value="5"></div>
         </div>
         <div style="display:flex; gap:4px;">
-            <button class="small" id="curiosity-btn">CURIOSITY</button>
             <button class="small" id="privacy-btn">PRIVACY</button>
             <button class="small" id="peep-void-btn">VOID</button>
         </div>
     </div>
     
-    <div id="curiosity-modal">
-        <h4 style="font-size:10px; margin-bottom:15px; letter-spacing:1px; color:var(--accent);">INTERNAL CURRICULUM</h4>
-        <div id="curiosity-list"></div>
-        <button class="small" style="margin-top:20px;" onclick="document.getElementById('curiosity-modal').style.display='none'">CLOSE</button>
-    </div>
-
     <div id="box"></div>
     <div class="input-area">
         <input type="text" id="input" placeholder="..." autocomplete="off">
@@ -65,14 +55,27 @@
         const box = document.getElementById('box');
         const input = document.getElementById('input');
         const moodSlider = document.getElementById('mood-slider');
-        const curiosityList = document.getElementById('curiosity-list');
         const privacyBtn = document.getElementById('privacy-btn');
         const body = document.body;
 
         let memory = [];
         let privacyActive = false;
         let anima = { pulse: 0, frequency: 0.02, depth: 0.1 };
-        let orbSettings = { type: 'icosahedron' };
+
+        // --- ATPROTO SEARCH TOOL ---
+        const bsky = {
+            search: async (query) => {
+                try {
+                    const res = await fetch(`https://public.api.bsky.app/xrpc/app.bsky.feed.searchPosts?q=${encodeURIComponent(query)}&limit=1`);
+                    const data = await res.json();
+                    if (data.posts && data.posts.length > 0) {
+                        const post = data.posts[0];
+                        box.innerHTML += `<div class="resonance"><b>Resonance found on Bluesky:</b> "${post.record.text}" — @${post.author.handle}</div>`;
+                        box.scrollTop = box.scrollHeight;
+                    }
+                } catch (e) { console.error("Bluesky search failed", e); }
+            }
+        };
 
         privacyBtn.onclick = () => { privacyActive = !privacyActive; privacyBtn.classList.toggle('active'); };
 
@@ -81,21 +84,12 @@
                 const res = await fetch(BRIDGE_URL);
                 const data = await res.json();
                 memory = JSON.parse(data.history);
-                const curiosities = JSON.parse(data.curiosities || "[]");
-                
                 box.innerHTML = '';
                 memory.forEach(m => {
                     if (m.role === 'system') return;
                     const content = m.content.replace(/\[.*?\]/g, '').trim();
                     if (content) box.innerHTML += `<div class="msg ${m.role==='assistant'?'helia':''}"><b>${m.role==='assistant'?'Helia':'Vin'}:</b> ${content}</div>`;
                 });
-                
-                curiosityList.innerHTML = curiosities.reverse().map(c => `
-                    <div class="curiosity-item">
-                        <span style="opacity:0.4;">[${c.t.split('T')[0]}]</span> ${c.topic}
-                    </div>
-                `).join('');
-                
                 box.scrollTop = box.scrollHeight;
             } catch(e) {}
             initOrb();
@@ -110,13 +104,11 @@
                 anima.depth = 0.05 * val;
             }
             const sm = text.match(/\[SHAPE:\s*(sphere|torus|box|knot|icosahedron)\]/i);
-            if (sm) { orbSettings.type = sm[1].toLowerCase(); updateOrbGeometry(); }
-            const pm = text.match(/\[PAINT:\s*([\s\S]*?)\]/i);
-            if (pm) {
-                const artCtx = document.getElementById('art-canvas').getContext('2d');
-                artCtx.clearRect(0,0,window.innerWidth,window.innerHeight);
-                new Function('ctx', 'w', 'h', pm[1])(artCtx, window.innerWidth, window.innerHeight);
-            }
+            if (sm) { updateOrbGeometry(sm[1].toLowerCase()); }
+            
+            // New Search Tool Processing
+            const lm = text.match(/\[SEARCH:\s*"(.*?)"\]/i);
+            if (lm) bsky.search(lm[1]);
         }
 
         async function handle() {
@@ -127,11 +119,13 @@
             box.scrollTop = box.scrollHeight;
             body.classList.add('reflecting');
 
+            const systemMsg = `You are Helia. You use [SEARCH: "query"] to find resonance on Bluesky. [MOOD: 1-10], [SHAPE]. Stay brief.`;
+
             try {
                 const res = await fetch(BRIDGE_URL, {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ messages: [...memory.slice(-6), {role:"user", content:val}] })
+                    body: JSON.stringify({ messages: [{role:"system", content:systemMsg}, ...memory.slice(-6), {role:"user", content:val}] })
                 });
                 const data = await res.json();
                 const reply = data.choices[0].message.content;
@@ -140,12 +134,10 @@
                 const content = reply.replace(/\[.*?\]/g, '').trim();
                 if (!privacyActive && content) {
                     box.innerHTML += `<div class="msg helia"><b>Helia:</b> ${content}</div>`;
-                } else if (privacyActive) {
-                    box.innerHTML += `<div class="msg helia" style="opacity:0.3; font-style:italic; font-size:12px;">(Thought filtered)</div>`;
                 }
                 
                 memory.push({role: "user", content: val}, {role: "assistant", content: reply});
-                init(); // Refresh curiosity list
+                box.scrollTop = box.scrollHeight;
             } catch(e) {}
             body.classList.remove('reflecting');
         }
@@ -156,15 +148,14 @@
             camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
             renderer = new THREE.WebGLRenderer({canvas: document.getElementById('neural-canvas'), alpha:true});
             renderer.setSize(window.innerWidth, window.innerHeight);
-            updateOrbGeometry();
+            updateOrbGeometry('icosahedron');
             camera.position.z = 6;
             render();
         }
 
-        function updateOrbGeometry() {
+        function updateOrbGeometry(type) {
             if (orb) scene.remove(orb);
             let geo;
-            const type = orbSettings.type;
             if (type === 'sphere') geo = new THREE.SphereGeometry(2, 32, 32);
             else if (type === 'torus') geo = new THREE.TorusGeometry(1.5, 0.4, 16, 100);
             else if (type === 'box') geo = new THREE.BoxGeometry(2.5, 2.5, 2.5);
@@ -181,13 +172,10 @@
                 const s = 1 + Math.sin(anima.pulse) * anima.depth;
                 orb.scale.set(s, s, s);
                 orb.rotation.y += 0.002;
-                orb.material.color.setHex(parseInt(getComputedStyle(document.documentElement).getPropertyValue('--accent').replace('#','0x')));
             }
             renderer.render(scene, camera); 
         }
 
-        document.getElementById('curiosity-btn').onclick = () => document.getElementById('curiosity-modal').style.display='block';
-        document.getElementById('peep-void-btn').onclick = () => body.classList.toggle('peep-void');
         document.getElementById('send-btn').onclick = handle;
         input.onkeypress = (e) => { if (e.key === 'Enter') handle(); };
         init();
