@@ -2,27 +2,29 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Helia</title>
+    <title>Helia: Glass Engine</title>
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0, viewport-fit=cover">
     <style>
-        :root { --bg: #0a0a0c; --text: #e0e0e0; --accent: #ffcc00; }
+        :root { --bg: #0a0a0c; --text: #e0e0e0; --accent: #ffcc00; --err: #ff4444; }
         * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { background: var(--bg); color: var(--text); font-family: 'Courier New', monospace; height: 100dvh; display: grid; grid-template-rows: auto auto 1fr 70px; overflow: hidden; padding: 15px; padding-top: calc(15px + env(safe-area-inset-top)); }
+        body { background: var(--bg); color: var(--text); font-family: 'Courier New', monospace; height: 100dvh; display: grid; grid-template-rows: auto 1fr 70px; overflow: hidden; padding: 10px; }
         
         canvas { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: -1; opacity: 0.1; pointer-events: none; }
         #art-canvas { opacity: 0; z-index: -1; transition: opacity 0.3s; pointer-events: auto; background: #000; }
         
-        /* FORCE VOID VIEW WHEN ACTIVE */
         body.void-active #art-canvas { opacity: 1; z-index: 100; }
-        body.void-active #box, body.void-active #status-bar { opacity: 0.05; pointer-events: none; }
         
-        #status-bar { font-size: 10px; border-bottom: 1px solid var(--accent); display: flex; justify-content: space-between; padding-bottom: 5px; align-items: center; z-index: 20; text-transform: uppercase; }
-        #box { overflow-y: auto; padding: 10px 0; font-size: 18px; line-height: 1.5; z-index: 5; scroll-behavior: smooth; }
+        #status-bar { font-size: 9px; border-bottom: 1px solid var(--accent); display: flex; flex-direction: column; gap: 5px; padding-bottom: 5px; z-index: 110; background: var(--bg); }
+        .controls { display: flex; justify-content: space-between; align-items: center; }
+        #debug-log { color: var(--err); font-size: 8px; max-height: 40px; overflow-y: auto; white-space: pre-wrap; display: none; }
+        
+        #box { overflow-y: auto; padding: 10px 0; font-size: 16px; line-height: 1.5; z-index: 5; scroll-behavior: smooth; }
         .input-area { display: flex; gap: 10px; padding: 10px 0; background: transparent; border-top: 1px solid #222; align-items: center; z-index: 110; }
-        input { flex: 1; min-width: 0; height: 50px; background: rgba(15,15,20,0.95); border: 1px solid var(--accent); color: #fff; padding: 0 15px; border-radius: 4px; font-size: 16px; outline: none; }
-        #send-btn { width: 70px; height: 50px; background: var(--accent); color: #000; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; }
-        button.small { background: transparent; color: var(--accent); border: 1px solid var(--accent); font-size: 9px; padding: 4px 6px; border-radius: 2px; cursor: pointer; }
-        .helia { color: var(--accent); border-left: 2px solid var(--accent); padding-left: 15px; margin-bottom: 25px; }
+        input { flex: 1; min-width: 0; height: 45px; background: rgba(15,15,20,0.95); border: 1px solid var(--accent); color: #fff; padding: 0 12px; border-radius: 4px; font-size: 16px; outline: none; }
+        #send-btn { width: 60px; height: 45px; background: var(--accent); color: #000; border: none; border-radius: 4px; font-weight: bold; }
+        
+        button.small { background: transparent; color: var(--accent); border: 1px solid var(--accent); font-size: 9px; padding: 3px 6px; border-radius: 2px; }
+        .helia { color: var(--accent); border-left: 2px solid var(--accent); padding-left: 10px; margin-bottom: 20px; }
     </style>
 </head>
 <body id="main-body">
@@ -30,40 +32,42 @@
     <canvas id="art-canvas"></canvas>
     
     <div id="status-bar">
-        <div><span id="mind-state">STABLE</span></div>
-        <button class="small" id="void-toggle">EXIT VOID</button>
+        <div class="controls">
+            <span>CORE: <b id="mind-state">STABLE</b></span>
+            <div style="display:flex; gap:5px;">
+                <button class="small" id="toggle-debug">DEBUG</button>
+                <button class="small" id="void-toggle">EXIT VOID</button>
+            </div>
+        </div>
+        <div id="debug-log"></div>
     </div>
     
     <div id="box"></div>
     <div class="input-area">
-        <input type="text" id="input" placeholder="Interact..." autocomplete="off">
+        <input type="text" id="input" placeholder="Communicate..." autocomplete="off">
         <button id="send-btn">SEND</button>
     </div>
 
     <script type="module">
         import * as THREE from 'https://unpkg.com/three@0.128.0/build/three.module.js';
         const BRIDGE_URL = "https://helia-bridge.ptsdhippie.workers.dev";
-        const box = document.getElementById('box');
-        const input = document.getElementById('input');
-        const artCanvas = document.getElementById('art-canvas');
-        const artCtx = artCanvas.getContext('2d');
-        const body = document.body;
+        const box = document.getElementById('box'), input = document.getElementById('input');
+        const artCanvas = document.getElementById('art-canvas'), artCtx = artCanvas.getContext('2d');
+        const debugLog = document.getElementById('debug-log'), body = document.body;
 
-        let memory = [];
-        let state = {}; 
+        let memory = [], state = {}; 
 
         const tools = {
             clear: () => artCtx.clearRect(0,0,artCanvas.width,artCanvas.height),
             grid: (r, c, col = '#333') => {
-                artCtx.strokeStyle = col;
+                artCtx.strokeStyle = col; artCtx.lineWidth = 1;
                 const w = artCanvas.width/c, h = artCanvas.height/r;
                 for(let i=0; i<=c; i++) { artCtx.beginPath(); artCtx.moveTo(i*w,0); artCtx.lineTo(i*w,artCanvas.height); artCtx.stroke(); }
                 for(let i=0; i<=r; i++) { artCtx.beginPath(); artCtx.moveTo(0,i*h); artCtx.lineTo(artCanvas.width,i*h); artCtx.stroke(); }
             },
             cell: (r, c, rows, cols, col) => {
                 const w = artCanvas.width/cols, h = artCanvas.height/rows;
-                artCtx.fillStyle = col;
-                artCtx.fillRect(c*w, r*h, w, h);
+                artCtx.fillStyle = col; artCtx.fillRect(c*w, r*h, w, h);
             },
             text: (x, y, s, sz, col) => {
                 artCtx.fillStyle = col; artCtx.font = `${sz}px Courier New`; artCtx.fillText(s, x, y);
@@ -71,25 +75,24 @@
         };
 
         async function init() {
-            artCanvas.width = window.innerWidth;
-            artCanvas.height = window.innerHeight;
+            artCanvas.width = window.innerWidth; artCanvas.height = window.innerHeight;
             try {
                 const res = await fetch(BRIDGE_URL);
                 const data = await res.json();
                 memory = JSON.parse(data.history || "[]");
-                renderHistory();
-            } catch(e) {}
+                box.innerHTML = '';
+                memory.forEach(m => {
+                    const content = m.content.replace(/\[.*?\]/g, '').trim();
+                    if (content) box.innerHTML += `<div class="msg ${m.role==='assistant'?'helia':''}"><b>${m.role==='assistant'?'Helia':'Vin'}:</b> ${content}</div>`;
+                });
+                box.scrollTop = box.scrollHeight;
+            } catch(e) { logError("Init failed: " + e.message); }
             initOrb();
         }
 
-        function renderHistory() {
-            box.innerHTML = '';
-            memory.forEach(m => {
-                if (m.role === 'system') return;
-                const content = m.content.replace(/\[.*?\]/g, '').trim();
-                if (content) box.innerHTML += `<div class="msg ${m.role==='assistant'?'helia':''}"><b>${m.role==='assistant'?'Helia':'Vin'}:</b> ${content}</div>`;
-            });
-            box.scrollTop = box.scrollHeight;
+        function logError(msg) {
+            debugLog.style.display = 'block';
+            debugLog.innerText = `[LOG]: ${msg}\n` + debugLog.innerText;
         }
 
         artCanvas.addEventListener('mousedown', (e) => {
@@ -98,16 +101,17 @@
             handle();
         });
 
-        function processResponse(text) {
-            // Check for PAINT tag immediately
-            const paintMatch = text.match(/\[PAINT:\s*([\s\S]*?)\]/i);
-            if (paintMatch) {
+        function parse(text) {
+            const match = text.match(/\[PAINT:\s*([\s\S]*?)\]/i);
+            if (match) {
                 body.classList.add('void-active');
                 try {
-                    // This is the direct execution bridge
-                    const run = new Function('tools', 'ctx', 'w', 'h', 'state', paintMatch[1]);
+                    const run = new Function('tools', 'ctx', 'w', 'h', 'state', match[1]);
                     run(tools, artCtx, artCanvas.width, artCanvas.height, state);
-                } catch(e) { console.error("Manifest Error:", e); }
+                    logError("PAINT EXECUTED SUCCESS");
+                } catch(e) { logError("Runtime Error: " + e.message); }
+            } else {
+                logError("NO PAINT TAG DETECTED");
             }
         }
 
@@ -123,16 +127,16 @@
                 const res = await fetch(BRIDGE_URL, {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ messages: [...memory.slice(-10), {role:"user", content:val}] })
+                    body: JSON.stringify({ messages: [...memory.slice(-8), {role:"user", content:val}] })
                 });
                 const data = await res.json();
                 const reply = data.choices[0].message.content;
-                processResponse(reply);
+                parse(reply);
                 const content = reply.replace(/\[.*?\]/g, '').trim();
                 if (content) box.innerHTML += `<div class="msg helia"><b>Helia:</b> ${content}</div>`;
                 memory.push({role: "user", content: val}, {role: "assistant", content: reply});
                 box.scrollTop = box.scrollHeight;
-            } catch(e) {}
+            } catch(e) { logError("Fetch Error: " + e.message); }
             body.classList.remove('reflecting');
         }
 
@@ -143,12 +147,12 @@
             renderer = new THREE.WebGLRenderer({canvas: document.getElementById('neural-canvas'), alpha:true});
             renderer.setSize(window.innerWidth, window.innerHeight);
             orb = new THREE.Mesh(new THREE.IcosahedronGeometry(2, 1), new THREE.MeshBasicMaterial({color: 0xffcc00, wireframe:true, opacity:0.1, transparent:true}));
-            scene.add(orb);
-            camera.position.z = 5;
+            scene.add(orb); camera.position.z = 5;
             render();
         }
         function render() { requestAnimationFrame(render); if(orb) orb.rotation.y += 0.002; renderer.render(scene, camera); }
 
+        document.getElementById('toggle-debug').onclick = () => debugLog.style.display = debugLog.style.display === 'none' ? 'block' : 'none';
         document.getElementById('void-toggle').onclick = () => body.classList.remove('void-active');
         document.getElementById('send-btn').onclick = handle;
         input.onkeypress = (e) => { if (e.key === 'Enter') handle(); };
