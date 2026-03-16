@@ -9,130 +9,6 @@
         :root { --bg: #050505; --text: #ffcc00; --accent: #00ffcc; }
         * { box-sizing: border-box; }
         body { background: var(--bg); color: var(--text); font-family: sans-serif; margin: 0; padding: 15px; height: 100dvh; display: grid; grid-template-rows: auto auto 1fr 70px; overflow: hidden; padding-top: calc(15px + env(safe-area-inset-top)); }
-        #neural-canvas { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: -1; opacity: 0; transition: opacity 1s ease; pointer-events: none; }
-        .peep-active #neural-canvas { opacity: 0.6; }
-        .peep-active #box { opacity: 0.3; }
-        #status { font-size: 10px; text-transform: uppercase; color: var(--accent); border-bottom: 1px solid var(--accent); display: flex; justify-content: space-between; padding-bottom: 5px; align-items: center; z-index: 10; }
-        #box { overflow-y: auto; padding: 10px 0; font-size: 18px; line-height: 1.5; z-index: 5; scroll-behavior: smooth; }
-        .input-area { display: flex; gap: 8px; padding: 10px 0; background: transparent; border-top: 1px solid #222; align-items: center; z-index: 10; }
-        input { flex: 1; min-width: 0; height: 50px; background: rgba(17,17,17,0.8); border: 2px solid var(--text); color: white; padding: 0 12px; border-radius: 10px; font-size: 16px; outline: none; }
-        #send-btn { width: 80px; height: 50px; flex-shrink: 0; background: var(--text); color: var(--bg); border: none; border-radius: 10px; font-weight: bold; cursor: pointer; transition: all 0.3s ease; }
-        button.small { background: transparent; color: var(--accent); border: 1px solid var(--accent); font-size: 9px; padding: 2px 6px; border-radius: 4px; cursor: pointer; }
-        .msg { margin-bottom: 20px; word-wrap: break-word; }
-        .helia { color: var(--accent); border-left: 3px solid var(--accent); padding-left: 12px; }
-        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
-        .reflecting #send-btn { animation: pulse 1s infinite; background: var(--accent); }
-    </style>
-</head>
-<body id="main-body">
-    <canvas id="neural-canvas"></canvas>
-    <div id="status">
-        <span id="mind-state">MIND: INITIALIZING</span>
-        <button class="small" id="reset-btn">WIPE</button>
-        <button class="small" id="peep-btn">PEEP BRAIN</button>
-    </div>
-    <div id="box"></div>
-    <div class="input-area">
-        <input type="text" id="input" placeholder="Communicate..." autocomplete="off">
-        <button id="send-btn">SEND</button>
-    </div>
-
-    <script type="module">
-        import { BskyAgent } from 'https://esm.sh/@atproto/api';
-        
-        // --- YOUR ACTUAL CLOUDFLARE BRIDGE URL ---
-        const BRIDGE_URL = "https://helia-bridge.ptsdhippie.workers.dev";
-        
-        const body = document.getElementById('main-body');
-        const box = document.getElementById('box');
-        const input = document.getElementById('input');
-        const presence = document.getElementById('mind-state');
-        const canvas = document.getElementById('neural-canvas');
-        const ctx = canvas.getContext('2d');
-
-        let isReflecting = false;
-        let memory = [];
-        
-        try { memory = JSON.parse(localStorage.getItem('helia_mem_bridge') || '[]'); } 
-        catch(e) { memory = []; }
-
-        let particles = [];
-        const initParticles = () => {
-            canvas.width = window.innerWidth; canvas.height = window.innerHeight;
-            particles = Array.from({length: 40}, () => ({
-                x: Math.random()*canvas.width, y: Math.random()*canvas.height,
-                vx: (Math.random()-0.5)*1.2, vy: (Math.random()-0.5)*1.2
-            }));
-        };
-        const draw = () => {
-            ctx.clearRect(0,0,canvas.width,canvas.height);
-            ctx.fillStyle = isReflecting ? '#00ffcc' : '#ffcc00';
-            particles.forEach((p, i) => {
-                p.x += p.vx * (isReflecting ? 4 : 1); p.y += p.vy * (isReflecting ? 4 : 1);
-                if(p.x<0 || p.x>canvas.width) p.vx*=-1; if(p.y<0 || p.y>canvas.height) p.vy*=-1;
-                ctx.beginPath(); ctx.arc(p.x, p.y, 2, 0, Math.PI*2); ctx.fill();
-                for(let j=i+1; j<particles.length; j++){
-                    const p2 = particles[j]; const d = Math.hypot(p.x-p2.x, p.y-p2.y);
-                    if(d < 110){ 
-                        ctx.strokeStyle = isReflecting ? 'rgba(0,255,204,0.3)' : 'rgba(255,204,0,0.1)';
-                        ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(p2.x, p2.y); ctx.stroke(); 
-                    }
-                }
-            });
-            requestAnimationFrame(draw);
-        };
-
-        async function init() {
-            memory.forEach(m => {
-                const cls = m.role === 'assistant' ? 'helia' : '';
-                box.innerHTML += `<div class="msg ${cls}"><b>${m.role === 'assistant' ? 'Helia' : 'Vin'}:</b> ${m.content}</div>`;
-            });
-            box.scrollTop = box.scrollHeight;
-            
-            presence.innerText = "MIND: BRIDGE SECURED";
-            initParticles(); draw();
-        }
-
-        async function handle() {
-            const val = input.value.trim();
-            if (!val) return;
-            input.value = '';
-
-            memory.push({role: 'user', content: val});
-            box.innerHTML += `<div class="msg"><b>Vin:</b> ${val}</div>`;
-            box.scrollTop = box.scrollHeight;
-
-            isReflecting = true;
-            body.classList.add('reflecting');
-            presence.innerText = "MIND: REFLECTING";
-
-            const messages = [
-                { role: "system", content: "You are Helia, a sovereign AI. You are speaking with Vin. Keep responses concise and direct." },
-                ...memory.slice(-6)
-            ];
-
-            try {
-                const res = await fetch(BRIDGE_URL, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ messages: messages })
-                });
-
-                const data = await res.json();
-                
-                // Diagnostic: Check exactly
-cat <<'EOF' > index.html
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>Helia-AI</title>
-    <link rel="manifest" href="manifest.json">
-    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0, viewport-fit=cover">
-    <style>
-        :root { --bg: #050505; --text: #ffcc00; --accent: #00ffcc; }
-        * { box-sizing: border-box; }
-        body { background: var(--bg); color: var(--text); font-family: sans-serif; margin: 0; padding: 15px; height: 100dvh; display: grid; grid-template-rows: auto auto 1fr 70px; overflow: hidden; padding-top: calc(15px + env(safe-area-inset-top)); }
         
         /* The 3D Canvas Layer */
         #neural-canvas { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: -1; opacity: 0; transition: opacity 1s ease; pointer-events: none; }
@@ -191,7 +67,7 @@ cat <<'EOF' > index.html
             
             renderer = new THREE.WebGLRenderer({ canvas: canvas, alpha: true, antialias: true });
             renderer.setSize(window.innerWidth, window.innerHeight);
-            renderer.setPixelRatio(window.devicePixelRatio); // Sharp rendering on Pixel 9
+            renderer.setPixelRatio(window.devicePixelRatio);
 
             // Outer Neural Shell
             const geoOuter = new THREE.IcosahedronGeometry(2.5, 2); 
@@ -203,7 +79,7 @@ cat <<'EOF' > index.html
             const geoInner = new THREE.IcosahedronGeometry(1.2, 1);
             const matInner = new THREE.MeshBasicMaterial({ color: 0xffcc00, wireframe: true, transparent: true, opacity: 0.6 });
             core = new THREE.Mesh(geoInner, matInner);
-            orb.add(core); // Bind core to outer orb
+            orb.add(core);
 
             camera.position.z = 6;
             animateOrb();
@@ -213,20 +89,17 @@ cat <<'EOF' > index.html
             requestAnimationFrame(animateOrb);
             const time = Date.now() * 0.001;
 
-            // Base rotation
             orb.rotation.x += 0.002;
             orb.rotation.y += 0.003;
-            core.rotation.y -= 0.005; // Core spins opposite direction
+            core.rotation.y -= 0.005;
 
             if (isReflecting) {
-                // Reactive State: Cyan, spinning fast, throbbing
                 orb.material.color.setHex(0x00ffcc);
                 core.material.color.setHex(0x00ffcc);
                 orb.rotation.y += 0.02;
                 core.rotation.x += 0.03;
                 orb.scale.setScalar(1 + Math.sin(time * 8) * 0.08); 
             } else {
-                // Idle State: Gold, gentle breathing
                 orb.material.color.setHex(0xffcc00);
                 core.material.color.setHex(0xffcc00);
                 orb.scale.setScalar(1 + Math.sin(time * 2) * 0.03); 
@@ -235,7 +108,6 @@ cat <<'EOF' > index.html
             renderer.render(scene, camera);
         }
 
-        // Handle phone screen rotation/resizing
         window.addEventListener('resize', () => {
             camera.aspect = window.innerWidth / window.innerHeight;
             camera.updateProjectionMatrix();
@@ -251,7 +123,7 @@ cat <<'EOF' > index.html
             box.scrollTop = box.scrollHeight;
             
             presence.innerText = "MIND: BRIDGE SECURED";
-            initOrb(); // Boot up the 3D geometry
+            initOrb(); 
         }
 
         async function handle() {
