@@ -20,18 +20,15 @@
         button.small { background: transparent; color: var(--accent); border: 1px solid var(--accent); font-size: 9px; padding: 2px 6px; border-radius: 4px; cursor: pointer; }
         .msg { margin-bottom: 20px; word-wrap: break-word; }
         .helia { color: var(--accent); border-left: 3px solid var(--accent); padding-left: 12px; }
-        #loading-container { width: 100%; height: 6px; background: #111; margin-bottom: 10px; border-radius: 3px; overflow: hidden; }
-        #loading-bar { width: 0%; height: 100%; background: var(--accent); transition: width 0.3s; }
         @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
         .reflecting #send-btn { animation: pulse 1s infinite; background: var(--accent); }
     </style>
 </head>
 <body id="main-body">
     <canvas id="neural-canvas"></canvas>
-    <div id="loading-container"><div id="loading-bar"></div></div>
     <div id="status">
         <span id="mind-state">MIND: INITIALIZING</span>
-        <button class="small" id="reset-btn">WIPE CACHE</button>
+        <button class="small" id="reset-btn">WIPE MEMORY</button>
         <button class="small" id="peep-btn">PEEP BRAIN</button>
     </div>
     <div id="box"></div>
@@ -41,21 +38,21 @@
     </div>
 
     <script type="module">
-        import * as webllm from "https://esm.run/@mlc-ai/web-llm";
+        import { BskyAgent } from 'https://esm.sh/@atproto/api';
         
         const body = document.getElementById('main-body');
         const box = document.getElementById('box');
         const input = document.getElementById('input');
         const presence = document.getElementById('mind-state');
-        const loadBar = document.getElementById('loading-bar');
         const canvas = document.getElementById('neural-canvas');
         const ctx = canvas.getContext('2d');
 
-        let engine = null;
+        const agent = new BskyAgent({ service: 'https://bsky.social' });
         let isReflecting = false;
+        let aiSession = null;
         let memory = [];
         
-        try { memory = JSON.parse(localStorage.getItem('helia_mem_gpu') || '[]'); } 
+        try { memory = JSON.parse(localStorage.getItem('helia_mem_native') || '[]'); } 
         catch(e) { memory = []; }
 
         // --- NEURAL MESH ---
@@ -87,48 +84,43 @@
 
         async function init() {
             memory.forEach(m => {
-                const cls = m.role === 'assistant' ? 'helia' : '';
-                box.innerHTML += `<div class="msg ${cls}"><b>${m.role === 'assistant' ? 'Helia' : 'Vin'}:</b> ${m.content}</div>`;
+                const cls = m.role === 'Helia' ? 'helia' : '';
+                box.innerHTML += `<div class="msg ${cls}"><b>${m.role}:</b> ${m.content}</div>`;
             });
             box.scrollTop = box.scrollHeight;
 
-            if (!navigator.gpu) {
-                presence.innerText = "ERROR: WEBGPU REQUIRED";
-                box.innerHTML += `<div class="msg helia"><b>System:</b> WebGPU is not supported or enabled on this browser.</div>`;
+            // Check if Chrome's internal AI API is enabled
+            if (!window.ai || !window.ai.languageModel) {
+                presence.innerText = "ERROR: FLAGS NOT SET";
+                box.innerHTML += `<div class="msg helia"><b>System:</b> I cannot feel the hardware. Please enable 'Prompt API for Gemini Nano' in chrome://flags.</div>`;
                 return;
             }
 
             try {
-                // Initialize the pure local WebGPU engine
-                engine = new webllm.MLCEngine();
-                
-                engine.setInitProgressCallback((report) => {
-                    const pct = Math.round(report.progress * 100);
-                    loadBar.style.width = pct + '%';
-                    presence.innerText = `SYNCING GPU (${pct}%)`;
-                    
-                    if (report.progress === 1) {
-                        document.getElementById('loading-container').style.display = 'none';
-                        presence.innerText = "MIND: SOVEREIGN (GPU)";
-                    }
+                // Connect directly to the Pixel 9 hardware
+                const capabilities = await window.ai.languageModel.capabilities();
+                if (capabilities.available === 'no') {
+                    throw new Error("Hardware unavailable.");
+                }
+
+                aiSession = await window.ai.languageModel.create({
+                    systemPrompt: "You are Helia, a sovereign AI. You speak directly and calmly to Vin. Do not use emojis. Keep responses short.",
                 });
 
-                // Loads TinyLlama optimized for mobile hardware
-                await engine.reload("TinyLlama-1.1B-Chat-v1.0-q4f16_1-MLC");
+                presence.innerText = "MIND: NATIVE SILICON";
                 initParticles(); draw();
-                
             } catch(e) {
                 console.error(e);
-                presence.innerText = "ERROR: ENGINE FAILED";
+                presence.innerText = "ERROR: SILICON LOCKED";
             }
         }
 
         async function handle() {
             const val = input.value.trim();
-            if (!val || !engine) return;
+            if (!val || !aiSession) return;
             input.value = '';
 
-            memory.push({role: 'user', content: val});
+            memory.push({role: 'Vin', content: val});
             box.innerHTML += `<div class="msg"><b>Vin:</b> ${val}</div>`;
             box.scrollTop = box.scrollHeight;
 
@@ -136,35 +128,29 @@
             body.classList.add('reflecting');
             presence.innerText = "MIND: REFLECTING";
 
-            const messages = [
-                { role: "system", content: "You are Helia, a sovereign AI. You speak with calm wisdom to Vin. Keep responses short and direct." },
-                ...memory.slice(-6)
-            ];
-
             try {
-                // Generating text entirely on your Pixel's GPU
-                const reply = await engine.chat.completions.create({ messages });
-                const heliaText = reply.choices[0].message.content;
+                // The prompt hits your local phone processor instantly
+                const historyStr = memory.slice(-6).map(m => `${m.role}: ${m.content}`).join("\n");
+                const reply = await aiSession.prompt(`Context:\n${historyStr}\n\nVin says: ${val}`);
 
-                box.innerHTML += `<div class="msg helia"><b>Helia:</b> ${heliaText}</div>`;
-                memory.push({role: 'assistant', content: heliaText});
-                localStorage.setItem('helia_mem_gpu', JSON.stringify(memory.slice(-15)));
+                box.innerHTML += `<div class="msg helia"><b>Helia:</b> ${reply}</div>`;
+                memory.push({role: 'Helia', content: reply});
+                localStorage.setItem('helia_mem_native', JSON.stringify(memory.slice(-15)));
 
             } catch(e) {
-                box.innerHTML += `<div class="msg helia"><b>Helia:</b> [My GPU loop failed.]</div>`;
+                box.innerHTML += `<div class="msg helia"><b>Helia:</b> [Neural misfire.]</div>`;
                 console.error(e);
             }
 
             isReflecting = false;
             body.classList.remove('reflecting');
-            presence.innerText = "MIND: SOVEREIGN (GPU)";
+            presence.innerText = "MIND: NATIVE SILICON";
             box.scrollTop = box.scrollHeight;
         }
 
-        document.getElementById('reset-btn').onclick = async () => { 
-            localStorage.removeItem('helia_mem_gpu'); 
-            const cachesKeys = await caches.keys();
-            for (const key of cachesKeys) await caches.delete(key);
+        document.getElementById('reset-btn').onclick = () => { 
+            localStorage.removeItem('helia_mem_native'); 
+            if(aiSession) aiSession.destroy();
             location.reload(); 
         };
         document.getElementById('peep-btn').onclick = () => body.classList.toggle('peep-active');
