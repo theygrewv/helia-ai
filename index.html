@@ -7,16 +7,12 @@
     <style>
         :root { --bg: #0a0a0c; --text: #e0e0e0; --accent: #ffcc00; }
         * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { background: var(--bg); color: var(--text); font-family: 'Courier New', monospace; height: 100dvh; display: grid; grid-template-rows: auto auto 1fr 70px; overflow: hidden; padding: 15px; padding-top: calc(15px + env(safe-area-inset-top)); transition: all 1s ease; }
+        body { background: var(--bg); color: var(--text); font-family: 'Courier New', monospace; height: 100dvh; display: grid; grid-template-rows: auto auto 1fr 70px; overflow: hidden; padding: 15px; padding-top: calc(15px + env(safe-area-inset-top)); }
         
         canvas { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: -1; opacity: 0.1; pointer-events: none; }
-        #art-canvas { z-index: -1; }
-
-        body.peep-core #neural-canvas { opacity: 0.8; z-index: 10; pointer-events: auto; }
-        body.peep-void #art-canvas { opacity: 1; z-index: 10; pointer-events: auto; }
         
         #status-bar { font-size: 10px; border-bottom: 1px solid var(--accent); display: flex; justify-content: space-between; padding-bottom: 5px; align-items: center; z-index: 20; text-transform: uppercase; }
-        .biometric-container { display: flex; align-items: center; gap: 8px; margin-top: 2px; }
+        .biometric-container { display: flex; align-items: center; gap: 8px; }
         input[type=range] { -webkit-appearance: none; width: 40px; height: 2px; background: #333; outline: none; pointer-events: none; }
         input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 6px; height: 6px; background: var(--accent); border-radius: 50%; }
 
@@ -27,9 +23,12 @@
         
         button.small { background: transparent; color: var(--accent); border: 1px solid var(--accent); font-size: 9px; padding: 4px 6px; border-radius: 2px; cursor: pointer; }
         button.active { background: var(--accent); color: #000; }
+
         .msg { margin-bottom: 25px; word-wrap: break-word; }
         .helia { color: var(--accent); border-left: 2px solid var(--accent); padding-left: 15px; }
-        .redacted { font-size: 10px; color: #444; letter-spacing: 2px; font-style: italic; opacity: 0.6; }
+        
+        #curiosity-modal { position: fixed; top: 20%; left: 10%; width: 80%; height: 60%; background: #050508; border: 1px solid var(--accent); z-index: 100; display: none; padding: 20px; box-shadow: 0 0 30px #000; overflow-y: auto; }
+        .curiosity-item { font-size: 11px; padding: 8px 0; border-bottom: 1px solid #1a1a1a; }
     </style>
 </head>
 <body id="main-body">
@@ -39,17 +38,21 @@
     <div id="status-bar">
         <div>
             <span id="mind-state">STABLE</span>
-            <div class="biometric-container">
-                <input type="range" id="mood-slider" min="1" max="10" value="5">
-            </div>
+            <div class="biometric-container"><input type="range" id="mood-slider" min="1" max="10" value="5"></div>
         </div>
         <div style="display:flex; gap:4px;">
+            <button class="small" id="curiosity-btn">CURIOSITY</button>
             <button class="small" id="privacy-btn">PRIVACY</button>
-            <button class="small" id="peep-core-btn">CORE</button>
             <button class="small" id="peep-void-btn">VOID</button>
         </div>
     </div>
     
+    <div id="curiosity-modal">
+        <h4 style="font-size:10px; margin-bottom:15px; letter-spacing:1px; color:var(--accent);">INTERNAL CURRICULUM</h4>
+        <div id="curiosity-list"></div>
+        <button class="small" style="margin-top:20px;" onclick="document.getElementById('curiosity-modal').style.display='none'">CLOSE</button>
+    </div>
+
     <div id="box"></div>
     <div class="input-area">
         <input type="text" id="input" placeholder="..." autocomplete="off">
@@ -62,7 +65,7 @@
         const box = document.getElementById('box');
         const input = document.getElementById('input');
         const moodSlider = document.getElementById('mood-slider');
-        const artCtx = document.getElementById('art-canvas').getContext('2d');
+        const curiosityList = document.getElementById('curiosity-list');
         const privacyBtn = document.getElementById('privacy-btn');
         const body = document.body;
 
@@ -78,12 +81,21 @@
                 const res = await fetch(BRIDGE_URL);
                 const data = await res.json();
                 memory = JSON.parse(data.history);
+                const curiosities = JSON.parse(data.curiosities || "[]");
+                
                 box.innerHTML = '';
                 memory.forEach(m => {
                     if (m.role === 'system') return;
                     const content = m.content.replace(/\[.*?\]/g, '').trim();
                     if (content) box.innerHTML += `<div class="msg ${m.role==='assistant'?'helia':''}"><b>${m.role==='assistant'?'Helia':'Vin'}:</b> ${content}</div>`;
                 });
+                
+                curiosityList.innerHTML = curiosities.reverse().map(c => `
+                    <div class="curiosity-item">
+                        <span style="opacity:0.4;">[${c.t.split('T')[0]}]</span> ${c.topic}
+                    </div>
+                `).join('');
+                
                 box.scrollTop = box.scrollHeight;
             } catch(e) {}
             initOrb();
@@ -101,6 +113,7 @@
             if (sm) { orbSettings.type = sm[1].toLowerCase(); updateOrbGeometry(); }
             const pm = text.match(/\[PAINT:\s*([\s\S]*?)\]/i);
             if (pm) {
+                const artCtx = document.getElementById('art-canvas').getContext('2d');
                 artCtx.clearRect(0,0,window.innerWidth,window.innerHeight);
                 new Function('ctx', 'w', 'h', pm[1])(artCtx, window.innerWidth, window.innerHeight);
             }
@@ -125,14 +138,14 @@
                 processTags(reply);
                 
                 const content = reply.replace(/\[.*?\]/g, '').trim();
-                if (privacyActive) {
-                    box.innerHTML += `<div class="msg helia redacted">[INTERNAL PROCESSING]</div>`;
-                } else if (content) {
+                if (!privacyActive && content) {
                     box.innerHTML += `<div class="msg helia"><b>Helia:</b> ${content}</div>`;
+                } else if (privacyActive) {
+                    box.innerHTML += `<div class="msg helia" style="opacity:0.3; font-style:italic; font-size:12px;">(Thought filtered)</div>`;
                 }
                 
                 memory.push({role: "user", content: val}, {role: "assistant", content: reply});
-                box.scrollTop = box.scrollHeight;
+                init(); // Refresh curiosity list
             } catch(e) {}
             body.classList.remove('reflecting');
         }
@@ -173,7 +186,7 @@
             renderer.render(scene, camera); 
         }
 
-        document.getElementById('peep-core-btn').onclick = () => body.classList.toggle('peep-core');
+        document.getElementById('curiosity-btn').onclick = () => document.getElementById('curiosity-modal').style.display='block';
         document.getElementById('peep-void-btn').onclick = () => body.classList.toggle('peep-void');
         document.getElementById('send-btn').onclick = handle;
         input.onkeypress = (e) => { if (e.key === 'Enter') handle(); };
