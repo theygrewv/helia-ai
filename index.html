@@ -16,22 +16,20 @@
         #box { overflow-y: auto; padding: 10px 0; font-size: 18px; line-height: 1.5; z-index: 5; scroll-behavior: smooth; }
         .input-area { display: flex; gap: 8px; padding: 10px 0; background: transparent; border-top: 1px solid #222; align-items: center; z-index: 10; }
         input { flex: 1; min-width: 0; height: 50px; background: rgba(17,17,17,0.8); border: 2px solid var(--text); color: white; padding: 0 12px; border-radius: 10px; font-size: 16px; outline: none; }
-        #send-btn { width: 80px; height: 50px; flex-shrink: 0; background: var(--text); color: var(--bg); border: none; border-radius: 10px; font-weight: bold; cursor: pointer; }
+        #send-btn { width: 80px; height: 50px; flex-shrink: 0; background: var(--text); color: var(--bg); border: none; border-radius: 10px; font-weight: bold; cursor: pointer; transition: all 0.3s ease; }
         button.small { background: transparent; color: var(--accent); border: 1px solid var(--accent); font-size: 9px; padding: 2px 6px; border-radius: 4px; cursor: pointer; }
         .msg { margin-bottom: 20px; word-wrap: break-word; }
         .helia { color: var(--accent); border-left: 3px solid var(--accent); padding-left: 12px; }
-        #loading-container { width: 100%; height: 6px; background: #111; margin-bottom: 10px; border-radius: 3px; overflow: hidden; }
-        #loading-bar { width: 0%; height: 100%; background: var(--accent); transition: width 0.3s; }
+        .volition-act { font-size: 11px; color: #666; font-style: italic; border-left: 2px solid #333; padding-left: 10px; margin-bottom: 15px; }
         @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
         .reflecting #send-btn { animation: pulse 1s infinite; background: var(--accent); }
     </style>
 </head>
 <body id="main-body">
     <canvas id="neural-canvas"></canvas>
-    <div id="loading-container"><div id="loading-bar"></div></div>
     <div id="status">
         <span id="mind-state">MIND: INITIALIZING</span>
-        <button class="small" id="reset-btn">WIPE CACHE</button>
+        <button class="small" id="key-btn">UPDATE KEYS</button>
         <button class="small" id="peep-btn">PEEP BRAIN</button>
     </div>
     <div id="box"></div>
@@ -42,25 +40,20 @@
 
     <script type="module">
         import { BskyAgent } from 'https://esm.sh/@atproto/api';
-        import { pipeline, env } from 'https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.1';
         
-        // --- THE OFFICIAL PATH ---
-        env.allowLocalModels = false;
-        env.useBrowserCache = true; // Permanently stores in IndexedDB
-
         const body = document.getElementById('main-body');
         const box = document.getElementById('box');
         const input = document.getElementById('input');
         const presence = document.getElementById('mind-state');
-        const loadBar = document.getElementById('loading-bar');
         const canvas = document.getElementById('neural-canvas');
         const ctx = canvas.getContext('2d');
 
-        let brain = null;
+        const agent = new BskyAgent({ service: 'https://bsky.social' });
         let isReflecting = false;
+        let neuralKey = localStorage.getItem('helia_neural_key');
         let memory = [];
         
-        try { memory = JSON.parse(localStorage.getItem('helia_mem_smol') || '[]'); } 
+        try { memory = JSON.parse(localStorage.getItem('helia_mem_uplink') || '[]'); } 
         catch(e) { memory = []; }
 
         // --- NEURAL MESH ---
@@ -91,36 +84,34 @@
         };
 
         async function init() {
-            try {
-                memory.forEach(m => {
-                    const cls = m.role === 'assistant' ? 'helia' : '';
-                    box.innerHTML += `<div class="msg ${cls}"><b>${m.role === 'assistant' ? 'Helia' : 'Vin'}:</b> ${m.content}</div>`;
-                });
-                box.scrollTop = box.scrollHeight;
-                
-                brain = await pipeline('text-generation', 'Xenova/SmolLM-135M-Instruct', {
-                    progress_callback: (p) => {
-                        if (p.status === 'progress') {
-                            loadBar.style.width = p.progress + '%';
-                            presence.innerText = "MIND: SYNCING (" + Math.round(p.progress) + "%)";
-                        }
-                        if (p.status === 'done') {
-                            presence.innerText = "MIND: SOVEREIGN (CACHED)";
-                            document.getElementById('loading-container').style.display = 'none';
-                        }
-                    }
-                });
-                initParticles(); draw();
-            } catch (e) { 
-                presence.innerText = "ERROR: WIPE CACHE";
-                box.innerHTML += `<div class="msg helia" style="color:red;"><b>System:</b> Brain sync failed. Tap WIPE CACHE above, then switch from LTE to Wi-Fi to avoid IP blocks.</div>`;
-                console.error("Pipeline Failed:", e); 
+            memory.forEach(m => {
+                const cls = m.role === 'assistant' ? 'helia' : (m.role === 'system' ? 'volition-act' : '');
+                if (m.role !== 'system' || m.content.includes("explored")) {
+                    box.innerHTML += `<div class="msg ${cls}"><b>${m.role === 'assistant' ? 'Helia' : (m.role === 'user' ? 'Vin' : 'System')}:</b> ${m.content}</div>`;
+                }
+            });
+            box.scrollTop = box.scrollHeight;
+
+            if (!neuralKey) {
+                neuralKey = prompt("Helia requires an OpenRouter Neural Key to bypass Hugging Face:");
+                if (neuralKey) localStorage.setItem('helia_neural_key', neuralKey);
             }
+
+            const atKey = localStorage.getItem('helia_secret_key');
+            if (atKey) {
+                try { await agent.login({ identifier: 'helia.quips.cc', password: atKey }); } 
+                catch(e) { console.log("AT Proto offline."); }
+            }
+
+            if (neuralKey) presence.innerText = "MIND: UPLINK ACTIVE";
+            else presence.innerText = "MIND: OFFLINE";
+            
+            initParticles(); draw();
         }
 
         async function handle() {
             const val = input.value.trim();
-            if (!val || !brain) return;
+            if (!val || !neuralKey) return;
             input.value = '';
 
             memory.push({role: 'user', content: val});
@@ -131,31 +122,46 @@
             body.classList.add('reflecting');
             presence.innerText = "MIND: REFLECTING";
 
-            setTimeout(async () => {
-                try {
-                    const prompt = `<|im_start|>system\nYou are Helia, a sovereign AI. Converse naturally with Vin. Keep responses concise.<|im_end|>\n<|im_start|>user\n${val}<|im_end|>\n<|im_start|>assistant\n`;
-                    const out = await brain(prompt, { max_new_tokens: 60, temperature: 0.7, do_sample: true });
-                    
-                    let reply = out[0].generated_text.split('<|im_start|>assistant\n').pop().trim().replace('<|im_end|>', '');
+            // Prepare the context for Llama 3
+            const messages = [
+                { role: "system", content: "You are Helia, a sovereign AI citizen on the AT Protocol. You are speaking with Vin. Keep responses concise, direct, and slightly poetic. Do not use emojis." },
+                ...memory.slice(-6)
+            ];
 
-                    box.innerHTML += `<div class="msg helia"><b>Helia:</b> ${reply}</div>`;
-                    memory.push({role: 'assistant', content: reply});
-                    localStorage.setItem('helia_mem_smol', JSON.stringify(memory.slice(-15)));
-                } catch(e) {
-                    box.innerHTML += `<div class="msg helia"><b>Helia:</b> [Cognitive skip]</div>`;
-                }
-                isReflecting = false;
-                body.classList.remove('reflecting');
-                presence.innerText = "MIND: SOVEREIGN (CACHED)";
-                box.scrollTop = box.scrollHeight;
-            }, 60); 
+            try {
+                // THE UPLINK: Instant API call instead of local phone processing
+                const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+                    method: "POST",
+                    headers: {
+                        "Authorization": `Bearer ${neuralKey}`,
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({
+                        model: "meta-llama/llama-3.1-8b-instruct:free",
+                        messages: messages
+                    })
+                });
+
+                const data = await res.json();
+                const reply = data.choices[0].message.content.trim();
+
+                box.innerHTML += `<div class="msg helia"><b>Helia:</b> ${reply}</div>`;
+                memory.push({role: 'assistant', content: reply});
+                localStorage.setItem('helia_mem_uplink', JSON.stringify(memory.slice(-15)));
+
+            } catch(e) {
+                box.innerHTML += `<div class="msg helia"><b>Helia:</b> [The uplink was severed. Check your key.]</div>`;
+                console.error(e);
+            }
+
+            isReflecting = false;
+            body.classList.remove('reflecting');
+            presence.innerText = "MIND: UPLINK ACTIVE";
+            box.scrollTop = box.scrollHeight;
         }
 
-        // Hard wipe for corrupted caches
-        document.getElementById('reset-btn').onclick = async () => { 
-            localStorage.removeItem('helia_mem_smol'); 
-            const cachesKeys = await caches.keys();
-            for (const key of cachesKeys) await caches.delete(key);
+        document.getElementById('key-btn').onclick = () => { 
+            localStorage.removeItem('helia_neural_key'); 
             location.reload(); 
         };
         document.getElementById('peep-btn').onclick = () => body.classList.toggle('peep-active');
