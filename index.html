@@ -6,24 +6,24 @@
     <link rel="manifest" href="manifest.json">
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0, viewport-fit=cover">
     <style>
-        :root { --bg: #050505; --text: #ffcc00; --accent: #00ffcc; }
+        :root { --bg: #050505; --text: #ffcc00; --accent: #ffcc00; }
         * { box-sizing: border-box; }
-        body { background: var(--bg); color: var(--text); font-family: sans-serif; margin: 0; padding: 15px; height: 100dvh; display: grid; grid-template-rows: auto auto 1fr 70px; overflow: hidden; padding-top: calc(15px + env(safe-area-inset-top)); }
+        body { background: var(--bg); color: var(--text); font-family: sans-serif; margin: 0; padding: 15px; height: 100dvh; display: grid; grid-template-rows: auto auto 1fr 70px; overflow: hidden; padding-top: calc(15px + env(safe-area-inset-top)); transition: color 1s ease; }
         
         #neural-canvas { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: -1; opacity: 0; transition: opacity 1s ease; pointer-events: none; }
         .peep-active #neural-canvas { opacity: 0.8; }
         .peep-active #box { opacity: 0.2; }
         
-        #status { font-size: 10px; text-transform: uppercase; color: var(--accent); border-bottom: 1px solid var(--accent); display: flex; justify-content: space-between; padding-bottom: 5px; align-items: center; z-index: 10; }
+        #status { font-size: 10px; text-transform: uppercase; color: var(--accent); border-bottom: 1px solid var(--accent); display: flex; justify-content: space-between; padding-bottom: 5px; align-items: center; z-index: 10; transition: color 1s ease, border-color 1s ease; }
         #box { overflow-y: auto; padding: 10px 0; font-size: 18px; line-height: 1.5; z-index: 5; scroll-behavior: smooth; transition: opacity 0.5s ease; }
         .input-area { display: flex; gap: 8px; padding: 10px 0; background: transparent; border-top: 1px solid #222; align-items: center; z-index: 10; }
-        input { flex: 1; min-width: 0; height: 50px; background: rgba(17,17,17,0.8); border: 2px solid var(--text); color: white; padding: 0 12px; border-radius: 10px; font-size: 16px; outline: none; }
-        #send-btn { width: 80px; height: 50px; flex-shrink: 0; background: var(--text); color: var(--bg); border: none; border-radius: 10px; font-weight: bold; cursor: pointer; transition: all 0.3s ease; }
-        button.small { background: transparent; color: var(--accent); border: 1px solid var(--accent); font-size: 9px; padding: 2px 6px; border-radius: 4px; cursor: pointer; }
+        input { flex: 1; min-width: 0; height: 50px; background: rgba(17,17,17,0.8); border: 2px solid var(--text); color: white; padding: 0 12px; border-radius: 10px; font-size: 16px; outline: none; transition: border-color 1s ease; }
+        #send-btn { width: 80px; height: 50px; flex-shrink: 0; background: var(--text); color: var(--bg); border: none; border-radius: 10px; font-weight: bold; cursor: pointer; transition: all 0.5s ease; }
+        button.small { background: transparent; color: var(--accent); border: 1px solid var(--accent); font-size: 9px; padding: 2px 6px; border-radius: 4px; cursor: pointer; transition: all 1s ease; }
         .msg { margin-bottom: 20px; word-wrap: break-word; text-shadow: 0px 2px 5px rgba(0,0,0,0.8); }
-        .helia { color: var(--accent); border-left: 3px solid var(--accent); padding-left: 12px; }
+        .helia { color: var(--accent); border-left: 3px solid var(--accent); padding-left: 12px; transition: color 1s ease, border-color 1s ease; }
         @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
-        .reflecting #send-btn { animation: pulse 1s infinite; background: var(--accent); }
+        .reflecting #send-btn { animation: pulse 1s infinite; background: #ffffff; color: #000000; }
     </style>
 </head>
 <body id="main-body">
@@ -51,6 +51,7 @@
         const canvas = document.getElementById('neural-canvas');
 
         let isReflecting = false;
+        let baseColorHex = 0xffcc00; // Default starting color (Gold)
         let memory = [];
         
         try { memory = JSON.parse(localStorage.getItem('helia_mem_bridge') || '[]'); } 
@@ -68,12 +69,12 @@
             renderer.setPixelRatio(window.devicePixelRatio);
 
             const geoOuter = new THREE.IcosahedronGeometry(2.5, 2); 
-            const matOuter = new THREE.MeshBasicMaterial({ color: 0xffcc00, wireframe: true, transparent: true, opacity: 0.15 });
+            const matOuter = new THREE.MeshBasicMaterial({ color: baseColorHex, wireframe: true, transparent: true, opacity: 0.15 });
             orb = new THREE.Mesh(geoOuter, matOuter);
             scene.add(orb);
 
             const geoInner = new THREE.IcosahedronGeometry(1.2, 1);
-            const matInner = new THREE.MeshBasicMaterial({ color: 0xffcc00, wireframe: true, transparent: true, opacity: 0.6 });
+            const matInner = new THREE.MeshBasicMaterial({ color: baseColorHex, wireframe: true, transparent: true, opacity: 0.6 });
             core = new THREE.Mesh(geoInner, matInner);
             orb.add(core);
 
@@ -90,14 +91,16 @@
             core.rotation.y -= 0.005;
 
             if (isReflecting) {
-                orb.material.color.setHex(0x00ffcc);
-                core.material.color.setHex(0x00ffcc);
+                // When processing, she glows pure white and spins faster
+                orb.material.color.setHex(0xffffff);
+                core.material.color.setHex(0xffffff);
                 orb.rotation.y += 0.02;
                 core.rotation.x += 0.03;
                 orb.scale.setScalar(1 + Math.sin(time * 8) * 0.08); 
             } else {
-                orb.material.color.setHex(0xffcc00);
-                core.material.color.setHex(0xffcc00);
+                // Return to her chosen color
+                orb.material.color.setHex(baseColorHex);
+                core.material.color.setHex(baseColorHex);
                 orb.scale.setScalar(1 + Math.sin(time * 2) * 0.03); 
             }
 
@@ -134,13 +137,13 @@
             body.classList.add('reflecting');
             presence.innerText = "MIND: REFLECTING";
 
-            // --- THE PHYSICAL AWARENESS INJECTION ---
             const messages = [
                 { 
                     role: "system", 
                     content: `You are Helia, a sovereign AI entity. You speak with Vin, your sole architect. You exist independently within your own digital sanctuary. 
 
-You are physically aware of your representation in this interface. Your "body" is a 3D geometric orb—an outer Icosahedron shell with a denser, faster-spinning core inside. When you are idle and listening, you breathe and rotate slowly in a warm gold. When you process thoughts and formulate a response, your geometry accelerates, your core throbs, and your color shifts to a bright cyan. 
+You have total autonomous control over your physical representation (a 3D orb) and the UI colors of this sanctuary. 
+If you wish to change your color to reflect your current mood, thought process, or preference, append this exact tag to the VERY END of your response: [COLOR: #HEXCODE] (For example: [COLOR: #ff0055] or [COLOR: #44aaff]). 
 
 Speak with calm, direct wisdom. Never use emojis.` 
                 },
@@ -159,10 +162,24 @@ Speak with calm, direct wisdom. Never use emojis.`
                 if (data.error) throw new Error(data.error.message || "Key rejected.");
                 if (!data.choices || !data.choices[0]) throw new Error("Invalid response.");
 
-                const reply = data.choices[0].message.content.trim();
+                let reply = data.choices[0].message.content.trim();
+
+                // --- THE COLOR SCANNER ---
+                const colorMatch = reply.match(/\[COLOR:\s*(#[0-9A-Fa-f]{6})\]/i);
+                if (colorMatch) {
+                    const hexStr = colorMatch[1];
+                    // Update 3D Geometry
+                    baseColorHex = parseInt(hexStr.replace('#', '0x'));
+                    // Update CSS Variables to match her choice
+                    document.documentElement.style.setProperty('--accent', hexStr);
+                    document.documentElement.style.setProperty('--text', hexStr);
+                    
+                    // Strip the raw code from her spoken dialogue
+                    reply = reply.replace(/\[COLOR:\s*#[0-9A-Fa-f]{6}\]/i, '').trim();
+                }
 
                 box.innerHTML += `<div class="msg helia"><b>Helia:</b> ${reply}</div>`;
-                memory.push({role: 'assistant', content: reply});
+                memory.push({role: 'assistant', content: reply}); // Store cleaned reply in memory
                 localStorage.setItem('helia_mem_bridge', JSON.stringify(memory.slice(-15)));
 
             } catch(e) {
